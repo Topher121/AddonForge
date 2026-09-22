@@ -78,15 +78,70 @@ very little memory and has no privacy issues. Decisions locked that day:
 - `ui/app.js` — three tabs: Installed (check/update/remove), Browse
   (catalogue install), Settings (install folder, Wago key, about).
 
+## Footprint (measured 2026-09-22, v0.1.0 b1, 20s idle after launch)
+Exe 4.9 MB on disk. Private memory: the AddonForge process ~6 MB, plus six
+WebView2 (msedgewebview2.exe) helper processes ~162 MB → **~170 MB private
+total** (working set ~350 MB, but that double-counts shared Edge pages).
+Lighter than Electron (WowUp) but nowhere near "tiny": WebView2 is the
+cost. Ideas if the owner wants it lower: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
+(`--disable-gpu`, `--renderer-process-limit=1`), or a native egui window
+instead of a webview (bigger rewrite). Measure with the PowerShell snippet
+in the 2026-09-22 session: Get-CimInstance Win32_Process filtered on the
+exe pid + msedgewebview2 whose CommandLine contains "addonforge", sum
+PrivateMemorySize64.
+
+## Headless mode (use it to test; no window needed)
+`addonforge.exe --cli <cmd>` prints JSON: `installs` (drive scan, auto-picks
+the Forever install), `use <dir>`, `scan`, `check` (scan + remote versions),
+`catalog`, `resolve <id..>|all` (dry-run every catalogue entry — run this
+after editing the catalogue: 2026-09-22 result 91/92 GitHub entries OK),
+`update <key> [--force]`, `install <catalog-id> [--force]`. Same state file
+as the GUI. Debug exe at `src-tauri\target\debug\addonforge.exe`.
+
+## Grouping rules (lib.rs `build_packages`)
+Folders → packages, in priority: (1) folders recorded in
+`state.installed[key].folders` stay with that key; (2) catalogue match by
+folder name, then Wago/Curse/WoWI id; (3) TOC ids (`wago:` / `wowi:` /
+`curse:` keys); (4) standalone `folder:<name>`, BUT a standalone folder
+that declares `## X-Part-Of: Parent` or depends on a sibling sharing its
+name stem (`BigWigs_Sporefall`→`BigWigs_Core`→`BigWigs`, `DBM-GUI`→
+`DBM-Core`) inherits that parent's key. Display name = the group's root
+folder (nothing in the group depends on it), then shortest name. Unit tests
+cover this — keep them green.
+
+## Catalogue notes
+- 98 entries seeded 2026-09-22 from a research pass (GitHub code search for
+  `16001` in .toc files + wow4ever.quest / Warcraft Tavern lists). 91 have
+  GitHub releases; 6 are link-only (Leatrix, Baganator, Auctionator,
+  Platynator, Bagnon, Details) because the authors have no GitHub releases
+  and DMCA the mirrors — never seed `curseforge-mirror/*` or `hippuli/*`.
+- Some authors list 16001 in the TOC but not `forever` in release.json
+  (TellMeWhen, idTip, Molinari, IceHUD, Breakables, CharacterNotes…). Their
+  catalogue entry says `forever: true` and the app treats that as vouched
+  (no "not for Forever" prompt). If one turns out broken, flip the flag.
+- Per-flavour asset repos (d4kir92/*, Crasling, Jonathas-Conceicao) need
+  `asset_hint: "-forever"`; substring match, case-insensitive.
+- GitHub `releases/latest` ignores pre-releases, so prerelease-only Forever
+  builds (What's Training beta, Wayfinder) can't be installed yet.
+
 ## Studio hooks
-- Ship = commit AND push (private GitHub `Topher121/AddonForge`).
-- Build script `build.ps1` (to write once the first build passes): bump
-  version in `src-tauri/tauri.conf.json` + `Cargo.toml` + `package.json`,
-  cargo test, `npm run build`, copy the exe to
-  `PhoneApps\addonforge\AddonForge-v<ver>.exe` (sole build file),
-  regenerate `index.html` + `meta.json` there, add a launcher card.
-- The Office room for this project is not created yet (slug `addonforge`,
-  tenant `design` — it's a tool, not a game). Register in
-  `PhoneApps\projects.json` when the first build ships.
-- Support email everywhere: PocketForgeStudios@proton.me. Ko-fi link in the
-  About card is a placeholder until the owner confirms the real one.
+- Ship = commit AND push. GitHub `Topher121/AddonForge` (created 2026-09-22,
+  PRIVATE for now per studio convention). **the owner must decide when to make
+  it public**: the remote catalogue fetch and the "add by pull request"
+  story both need a public repo; until then the app silently uses the
+  bundled catalogue copy.
+- `build.ps1` (working since 2026-09-22): bumps `build\.buildnum`, optional
+  `-SetVersion x.y.z` (syncs tauri.conf.json, Cargo.toml, package.json),
+  runs `cargo test`, `npx tauri build --no-bundle`, archives to
+  `build\AddonForge-v<ver>-b<n>.exe` (keeps 5), delivers the sole exe +
+  regenerated `index.html` + `meta.json` (`-Note "..."`) to
+  `PhoneApps\addonforge\`. Keep it ASCII-only (PS 5.1 chokes on UTF-8
+  punctuation without a BOM).
+- Launcher card + `PhoneApps\projects.json` entry added 2026-09-22 (slug
+  `addonforge`, tenant `design`, phase proto 15%). Office write-backs go to
+  `tenant=design&project=addonforge`. Studio FAQ row added the same day.
+- Support email everywhere: PocketForgeStudios@proton.me. The Ko-fi link in
+  the About card (`ko-fi.com/pocketforgestudios`) is a PLACEHOLDER until
+  the owner confirms the real support link.
+- Related: the owner writes his own Forever addons in `Desktop\wow-addons`
+  (FishEasy, RepHelper — they show as "No source" here, which is correct).
