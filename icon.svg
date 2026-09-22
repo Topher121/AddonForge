@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#1e3752"/>
+      <stop offset="1" stop-color="#0d1728"/>
+    </radialGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e6fcff"/>
+      <stop offset="0.5" stop-color="#55dcf2"/>
+      <stop offset="1" stop-color="#189ac2"/>
+    </linearGradient>
+    <linearGradient id="ember" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffd27a"/>
+      <stop offset="1" stop-color="#ff7a1f"/>
+    </linearGradient>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="104" fill="url(#bg)" stroke="#46608a" stroke-width="12"/>
+  <!-- anvil -->
+  <path d="M104 236 h300 a34 34 0 0 1 0 68 h-120 v54 h60 v40 h-180 v-40 h60 v-54 h-60 c-50 0-90-30-100-68 z" fill="url(#steel)" stroke="#0a3644" stroke-width="10" stroke-linejoin="round"/>
+  <!-- horn shine -->
+  <path d="M120 250 h160" stroke="#ffffff" stroke-opacity="0.55" stroke-width="10" stroke-linecap="round"/>
+  <!-- sparks / download arrow -->
+  <path d="M256 84 v96" stroke="url(#ember)" stroke-width="30" stroke-linecap="round"/>
+  <path d="M206 150 l50 50 l50 -50" fill="none" stroke="url(#ember)" stroke-width="30" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="160" cy="120" r="9" fill="#ffd27a"/>
+  <circle cx="352" cy="132" r="7" fill="#ff9a3c"/>
+  <circle cx="330" cy="92" r="5" fill="#ffd27a"/>
+</svg>

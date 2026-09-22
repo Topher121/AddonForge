@@ -1,0 +1,50 @@
+{
+  "flavor": "forever",
+  "updated": "2026-09-22",
+  "note": "AddonForge catalogue for WoW: Forever. This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. To add an addon, open a pull request adding one entry. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring picking the zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true/false/null).",
+  "addons": [
+    {
+      "id": "bigwigs",
+      "name": "BigWigs",
+      "desc": "Boss encounter alerts and timers.",
+      "category": "Bosses",
+      "github": "BigWigsMods/BigWigs",
+      "curse": 2382,
+      "folders": ["BigWigs", "BigWigs_Core", "BigWigs_Options", "BigWigs_Plugins"],
+      "url": "https://github.com/BigWigsMods/BigWigs",
+      "forever": true
+    },
+    {
+      "id": "dbm",
+      "name": "Deadly Boss Mods",
+      "desc": "Boss mods: warnings, timers and range checks.",
+      "category": "Bosses",
+      "github": "DeadlyBossMods/DeadlyBossMods",
+      "curse": 3358,
+      "folders": ["DBM-Core", "DBM-GUI", "DBM-StatusBarTimers", "DBM-Test", "DBM-Test-Core"],
+      "url": "https://github.com/DeadlyBossMods/DeadlyBossMods",
+      "forever": true
+    },
+    {
+      "id": "plater",
+      "name": "Plater Nameplates",
+      "desc": "Customisable nameplates with scripting and mods.",
+      "category": "Nameplates",
+      "github": "Tercioo/Plater-Nameplates",
+      "curse": 100547,
+      "folders": ["Plater"],
+      "url": "https://github.com/Tercioo/Plater-Nameplates",
+      "forever": true
+    },
+    {
+      "id": "restedxp",
+      "name": "RestedXP Guides",
+      "desc": "Levelling guides with an on-screen step tracker.",
+      "category": "Leveling",
+      "github": "RestedXP/RXPGuides",
+      "folders": ["RXPGuides"],
+      "url": "https://github.com/RestedXP/RXPGuides",
+      "forever": true
+    }
+  ]
+}

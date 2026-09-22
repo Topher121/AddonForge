@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AddonForge</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <img src="icon.svg" alt="" class="mark">
+    <div>
+      <div class="name">AddonForge</div>
+      <div class="sub" id="install-line">Looking for WoW: Forever…</div>
+    </div>
+  </div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="installed">Installed</button>
+    <button class="tab" data-tab="browse">Browse</button>
+    <button class="tab" data-tab="settings">Settings</button>
+  </nav>
+</header>
+
+<main>
+  <section id="tab-installed" class="panel active">
+    <div class="toolbar">
+      <button id="btn-check" class="pill">Check for updates</button>
+      <button id="btn-update-all" class="pill ghost" disabled>Update all</button>
+      <button id="btn-rescan" class="pill ghost">Rescan</button>
+      <span id="summary" class="summary"></span>
+    </div>
+    <div id="installed-list" class="list"></div>
+  </section>
+
+  <section id="tab-browse" class="panel">
+    <div class="toolbar">
+      <input id="browse-filter" type="search" placeholder="Filter the catalogue…">
+      <button id="btn-catalog-refresh" class="pill ghost">Refresh catalogue</button>
+      <span id="browse-summary" class="summary"></span>
+    </div>
+    <div id="browse-list" class="list"></div>
+    <p class="hint">Missing an addon? The catalogue is a public list on GitHub. Anyone can add an entry with a pull request, and AddonForge downloads straight from the author's own releases.</p>
+  </section>
+
+  <section id="tab-settings" class="panel">
+    <div class="card">
+      <h2>WoW install</h2>
+      <p class="muted">The product folder AddonForge manages. Only WoW: Forever is supported for now.</p>
+      <div class="row">
+        <input id="install-path" type="text" placeholder="C:\Program Files (x86)\World of Warcraft\_classic_beta_">
+        <button id="btn-pick" class="pill ghost">Browse…</button>
+        <button id="btn-detect" class="pill ghost">Detect</button>
+        <button id="btn-save-path" class="pill">Save</button>
+      </div>
+      <div id="detected" class="detected"></div>
+      <button id="btn-open-folder" class="link">Open the AddOns folder</button>
+    </div>
+
+    <div class="card">
+      <h2>Wago Addons key <span class="tag">optional</span></h2>
+      <p class="muted">Some addons only publish on Wago. Wago's API needs a key, which is free: <a href="#" data-url="" id="wago-link">get one here</a>, paste it below. It is stored on this PC and only ever sent to addons.wago.io.</p>
+      <div class="row">
+        <input id="wago-key" type="password" placeholder="Paste your Wago API key">
+        <button id="btn-save-key" class="pill">Save key</button>
+        <button id="btn-clear-key" class="pill ghost">Clear</button>
+      </div>
+      <div id="wago-status" class="muted"></div>
+    </div>
+
+    <div class="card">
+      <h2>About</h2>
+      <p class="muted">AddonForge <span id="version"></span> by Pocket Forge Studios. No accounts, no ads, no analytics. The app talks only to the addon sites themselves (GitHub, Wago, WoWInterface, TukUI).</p>
+      <p class="muted">Catalogue: <span id="catalog-info">…</span></p>
+      <p class="muted">Settings file: <code id="state-file"></code></p>
+      <p class="muted"><a href="#" data-url="https://github.com/Topher121/AddonForge">Source code &amp; catalogue on GitHub</a> · <a href="#" data-url="https://ko-fi.com/pocketforgestudios">Support the dev</a> · <a href="#" data-url="mailto:PocketForgeStudios@proton.me">PocketForgeStudios@proton.me</a></p>
+    </div>
+  </section>
+</main>
+
+<div id="toast" class="toast"></div>
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <div id="modal-text"></div>
+    <div class="row right">
+      <button id="modal-no" class="pill ghost">Cancel</button>
+      <button id="modal-yes" class="pill">Continue</button>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

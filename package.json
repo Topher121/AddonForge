@@ -1,0 +1,14 @@
+{
+  "name": "addonforge",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lightweight, telemetry-free WoW: Forever addon manager by Pocket Forge Studios",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build --no-bundle",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2"
+  }
+}
