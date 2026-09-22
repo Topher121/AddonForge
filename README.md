@@ -2,6 +2,10 @@
 
 A small, fast addon manager for **World of Warcraft: Forever**.
 
+**[Download the latest release](https://github.com/Topher121/AddonForge/releases/latest)** (Windows 10/11, portable exe, no installer). Windows may show "Windows protected your PC" the first time because the exe isn't code-signed yet: click *More info*, then *Run anyway*.
+
+![AddonForge showing installed addons with update status](docs/screenshot.png)
+
 - **Light.** A single exe on top of the WebView2 that Windows already has. No bundled browser.
 - **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI), the same way your browser would.
 - **Honest.** If an addon only publishes on CurseForge, AddonForge says so and gives you the link instead of pretending.
@@ -46,9 +50,13 @@ npm run dev      # run with hot reload of the UI folder
 npm run build    # portable exe in src-tauri/target/release/
 ```
 
+## Contributing
+
+Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and a pull request, validated automatically. Or open an "Add an addon" issue and we'll do it.
+
 ## Support
 
-Bugs and ideas: open an issue, or email PocketForgeStudios@proton.me.
+Bugs and ideas: use **Report a problem** in the app's Settings tab (it fills in the diagnostics), open an issue, or email PocketForgeStudios@proton.me.
 If AddonForge saves you some hassle, the support link in the app's About tab keeps the lights on. No pressure.
 
-Made by Pocket Forge Studios.
+Made by Pocket Forge Studios. MIT licensed, see [LICENSE](LICENSE).
