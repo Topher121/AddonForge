@@ -211,3 +211,20 @@ cover this — keep them green.
   FAQ). Never link a personal PayPal again; build 4 briefly did.
 - Related: the owner writes his own Forever addons in `Desktop\wow-addons`
   (FishEasy, RepHelper — they show as "No source" here, which is correct).
+
+## Launch + queue (2026-09-22 evening)
+- ANNOUNCED on r/wowforever (the owner's account, Discussion flair, ~12
+  upvotes / 1.9K views / 3 friendly comments in the first hour; 2 real
+  downloads of b9 by 21:00). Draft + ready replies: `docs/announcement-reddit.md`.
+  r/wowaddons crosspost planned a day later; never r/wow (retail).
+- Feedback channels: GitHub issues (owner gets email; Report button
+  pre-fills), the Reddit thread, studio email, Ko-fi messages. Mention
+  Monitor now watches "AddonForge" / "Addon Forge" (NAS, daily 10:00).
+- Queued (all logged as Office orders, tenant design / project addonforge),
+  in this order: (1) addon icons, (2) download counts + sort via daily
+  stats.json Action, (3) ForeverSVFix detection reminder (issue #1),
+  (4) in-app "Send report" through the studio Firestore reporter, explicit
+  button + disclosure in About/README (the owner: leave for now, ship with the
+  icons build so the change and the disclosure land together).
+- Build numbers can have gaps: the second session built b7/b8 locally
+  without releasing; b9 is the first release with the new icon.
