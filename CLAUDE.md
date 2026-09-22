@@ -75,8 +75,14 @@ very little memory and has no privacy issues. Decisions locked that day:
 - `src-tauri/src/lib.rs` — Tauri commands; groups folders into packages
   (catalogue match by folder name / ids, then by Wago/WoWI/Curse id, else
   standalone) and picks the source (github > wago-with-key > wowi > tukui).
-- `ui/app.js` — three tabs: Installed (check/update/remove), Browse
-  (catalogue install), Settings (install folder, Wago key, about).
+- `ui/app.js` — three tabs: **My addons** (stats row, search, All /
+  Updates / Need attention filters, per-row actions in a "..." menu),
+  **Discover** (GitHub-link install box + catalogue), **Settings** (install
+  folder, pre-releases, Wago key, export/import, report a problem, about).
+  Redesigned 2026-09-22 by a second session (green accent theme, footer
+  "No accounts. No ads. Just addons."); `node scripts/test-ui.js` runs its
+  DOM-free behaviour checks (counts, filters, search, escaping, modal).
+  Keep both `cargo test` and that script green.
 
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
