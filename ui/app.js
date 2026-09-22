@@ -11,6 +11,8 @@ let catalog = [];
 let busy = false;
 let settings = null;
 let selfUpdate = null;
+let activeFilter = "all";
+const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.missing_deps.length > 0 || !p.supports_forever;
 
 // ---------------------------------------------------------------- helpers
 let toastTimer;
@@ -24,14 +26,26 @@ function toast(msg, bad = false) {
 
 function confirmModal(html, yes = "Continue") {
   return new Promise((resolve) => {
+    const previousFocus = document.activeElement;
     $("modal-text").innerHTML = html;
     $("modal-yes").textContent = yes;
     $("modal").classList.remove("hidden");
+    $("modal-no").focus();
+    const onKey = (e) => {
+      if (e.key === "Escape") { e.preventDefault(); done(false); }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        (document.activeElement === $("modal-no") ? $("modal-yes") : $("modal-no")).focus();
+      }
+    };
     const done = (v) => {
       $("modal").classList.add("hidden");
       $("modal-yes").onclick = $("modal-no").onclick = null;
+      document.removeEventListener("keydown", onKey);
+      previousFocus?.focus();
       resolve(v);
     };
+    document.addEventListener("keydown", onKey);
     $("modal-yes").onclick = () => done(true);
     $("modal-no").onclick = () => done(false);
   });
@@ -61,6 +75,11 @@ async function copyText(text) {
 }
 
 document.addEventListener("click", (e) => {
+  const navigation = e.target.closest("[data-navigate]");
+  if (navigation) document.querySelector(`.tab[data-tab="${navigation.dataset.navigate}"]`)?.click();
+  document.querySelectorAll(".more-actions[open]").forEach((menu) => {
+    if (!menu.contains(e.target)) menu.open = false;
+  });
   const a = e.target.closest("[data-url]");
   if (a && a.dataset.url) {
     e.preventDefault();
@@ -71,8 +90,13 @@ document.addEventListener("click", (e) => {
 // ---------------------------------------------------------------- tabs
 document.querySelectorAll(".tab").forEach((btn) =>
   btn.addEventListener("click", () => {
-    document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
+    document.querySelectorAll(".tab").forEach((b) => {
+      b.classList.toggle("active", b === btn);
+      if (b === btn) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
+    });
     document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
+    document.querySelector("main").scrollTop = 0;
     if (btn.dataset.tab === "browse" && !catalog.length) loadCatalog(false);
     if (btn.dataset.tab === "settings") loadSettings();
   })
@@ -96,14 +120,19 @@ function badge(p) {
 function visiblePackages() {
   const q = $("installed-filter").value.trim().toLowerCase();
   const showIgnored = $("show-ignored").checked;
-  return packages.filter((p) => (showIgnored || !p.ignored) && (!q || `${p.name} ${p.folders.join(" ")} ${p.author || ""} ${p.source_label}`.toLowerCase().includes(q)));
+  return packages.filter((p) => (showIgnored || !p.ignored) && (activeFilter === "all" || (activeFilter === "updates" ? p.status === "update" : needsAttention(p))) && (!q || `${p.name} ${p.folders.join(" ")} ${p.author || ""} ${p.source_label}`.toLowerCase().includes(q)));
 }
 
 function renderInstalled() {
   const list = $("installed-list");
   const rows = visiblePackages();
+  $("stat-total").textContent = packages.length;
+  $("stat-updates").textContent = packages.filter((p) => p.status === "update" && !p.ignored).length;
+  $("stat-attention").textContent = packages.filter((p) => !p.ignored && needsAttention(p)).length;
+  const eligible = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored).length;
+  $("btn-update-all").textContent = eligible ? `Update all (${eligible})` : "Update all";
   if (!packages.length) {
-    list.innerHTML = `<div class="empty">No addons found in this install's Interface\\AddOns folder yet.<br>Head to <b>Browse</b> to install some.</div>`;
+    list.innerHTML = `<div class="empty"><strong>Your adventure starts here</strong>No addons found in this installation yet.<br><button class="pill" data-navigate="browse">Discover addons</button></div>`;
     $("summary").textContent = "";
     setBusy(busy);
     return;
@@ -134,21 +163,23 @@ function renderInstalled() {
         </div>
         <div class="actions">
           ${canUpdate ? `<button class="pill small ${p.status === "update" && !p.pinned ? "" : "ghost"}" data-act="update">${btnLabel}</button>` : ""}
-          <button class="pill small ghost" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Unpin" : "Pin"}</button>
+          <details class="more-actions"><summary aria-label="Options for ${esc(p.name)}" title="Addon options">···</summary><div class="action-menu">
+          <button class="pill small ghost" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Allow updates" : "Pin version"}</button>
           <button class="pill small ghost" data-act="ignore" title="${p.ignored ? "Show it again" : "Hide from this list and skip checks"}">${p.ignored ? "Unignore" : "Ignore"}</button>
           <button class="pill small ghost" data-act="remove" title="Delete these folders from AddOns (saved settings in WTF are kept)">Remove</button>
+          </div></details>
         </div>
         ${p.note ? `<div class="${noteCls}">${esc(p.note)}</div>` : ""}
         ${deps}
       </div>`;
         })
         .join("")
-    : `<div class="empty">Nothing matches.</div>`;
+    : `<div class="empty"><strong>No addons in this view</strong>Try another filter or clear your search.<br><button class="pill ghost" data-reset-filters>Show all addons</button></div>`;
   const updates = packages.filter((p) => p.status === "update" && !p.ignored).length;
   const errors = packages.filter((p) => p.status === "error" && !p.ignored).length;
   const ignored = packages.filter((p) => p.ignored).length;
   $("summary").textContent =
-    `${packages.length} addon${packages.length === 1 ? "" : "s"}` +
+    `Showing ${rows.length} of ${packages.length} addon${packages.length === 1 ? "" : "s"}` +
     (updates ? ` · ${updates} update${updates === 1 ? "" : "s"}` : "") +
     (errors ? ` · ${errors} error${errors === 1 ? "" : "s"}` : "") +
     (ignored ? ` · ${ignored} ignored` : "");
@@ -157,14 +188,52 @@ function renderInstalled() {
 
 $("installed-filter").addEventListener("input", renderInstalled);
 $("show-ignored").addEventListener("change", renderInstalled);
+document.querySelectorAll("[data-filter]").forEach((btn) => btn.addEventListener("click", () => {
+  activeFilter = btn.dataset.filter;
+  document.querySelectorAll("[data-filter]").forEach((b) => {
+    b.classList.toggle("active", b === btn);
+    b.setAttribute("aria-pressed", String(b === btn));
+  });
+  renderInstalled();
+}));
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") document.querySelectorAll(".more-actions[open]").forEach((menu) => {
+    menu.open = false;
+    menu.querySelector("summary").focus();
+  });
+});
+// Keep the options menu inside the window, including the last visible row.
+$("installed-list").addEventListener("toggle", (e) => {
+  const details = e.target;
+  if (!details.matches(".more-actions") || !details.open) return;
+  document.querySelectorAll(".more-actions[open]").forEach((other) => {
+    if (other !== details) other.open = false;
+  });
+  const menu = details.querySelector(".action-menu");
+  const rect = details.getBoundingClientRect();
+  const height = menu.offsetHeight;
+  menu.style.right = `${Math.max(12, window.innerWidth - rect.right)}px`;
+  menu.style.top = `${Math.max(12, rect.bottom + height + 48 > window.innerHeight ? rect.top - height - 6 : rect.bottom + 6)}px`;
+}, true);
+document.querySelector("main").addEventListener("scroll", () => {
+  document.querySelectorAll(".more-actions[open]").forEach((menu) => { menu.open = false; });
+});
 
 $("installed-list").addEventListener("click", async (e) => {
+  if (e.target.closest("[data-reset-filters]")) {
+    $("installed-filter").value = "";
+    $("show-ignored").checked = true;
+    document.querySelector('[data-filter="all"]').click();
+    return;
+  }
   const btn = e.target.closest("button[data-act]");
   if (!btn || busy) return;
   const key = btn.closest(".item").dataset.key;
   const p = packages.find((x) => x.key === key);
   if (!p) return;
   const act = btn.dataset.act;
+  const menu = btn.closest("details");
+  if (menu) menu.open = false;
   if (act === "update") await updateOne(p);
   if (act === "dep") {
     const entry = catalog.find((c) => c.id === btn.dataset.id) || { id: btn.dataset.id, name: btn.dataset.id };
@@ -251,7 +320,7 @@ async function rescan(keepStatus = false) {
   } catch (err) {
     packages = [];
     renderInstalled();
-    $("installed-list").innerHTML = `<div class="empty">${esc(String(err))}<br><br>Pick your WoW: Forever folder in <b>Settings</b>.</div>`;
+    $("installed-list").innerHTML = `<div class="empty"><strong>Let's find your addons</strong>${esc(String(err))}<br><button class="pill" data-navigate="settings">Choose WoW folder</button></div>`;
   } finally {
     setBusy(false);
   }
@@ -259,6 +328,7 @@ async function rescan(keepStatus = false) {
 
 async function checkUpdates() {
   setBusy(true);
+  $("btn-check").innerHTML = '<span class="spinner"></span> Checking…';
   packages.forEach((p) => {
     if (p.source && p.status !== "no-key" && !p.ignored) p.status = "checking";
   });
@@ -267,10 +337,12 @@ async function checkUpdates() {
     packages = await invoke("check_updates");
     renderInstalled();
     const n = packages.filter((p) => p.status === "update" && !p.ignored && !p.pinned).length;
-    toast(n ? `${n} update${n === 1 ? "" : "s"} available` : "Everything is up to date");
+    const unchecked = packages.filter((p) => !p.ignored && p.status !== "ok" && p.status !== "update").length;
+    toast(n ? `${n} update${n === 1 ? "" : "s"} available` : unchecked ? `Check complete. ${unchecked} addon${unchecked === 1 ? " could" : "s could"} not be verified.` : "All checked addons are up to date");
   } catch (err) {
     toast(String(err), true);
   } finally {
+    $("btn-check").textContent = "Check for updates";
     setBusy(false);
   }
 }
