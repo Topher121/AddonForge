@@ -29,5 +29,6 @@ pub async fn resolve(client: &reqwest::Client, slug: &str) -> anyhow::Result<Rem
         download_url: a.url,
         filename: format!("{slug}-{}.zip", a.version),
         forever,
+        prerelease: false,
     })
 }

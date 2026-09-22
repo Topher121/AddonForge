@@ -1,10 +1,11 @@
 //! Persistent local state: `%APPDATA%\AddonForge\state.json`.
 //!
-//! This is the only file the app writes outside the game's AddOns folder.
-//! Written atomically (tmp + rename) so a crash can never corrupt it.
+//! This is the only settings file the app writes outside the game's AddOns
+//! folder (plus `addonforge.log` beside it). Written atomically (tmp +
+//! rename) so a crash can never corrupt it.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -30,6 +31,18 @@ pub struct AppState {
     /// Packages we installed ourselves, keyed by package key.
     #[serde(default)]
     pub installed: HashMap<String, Installed>,
+    /// Consider GitHub pre-releases and Wago beta builds when checking.
+    #[serde(default)]
+    pub allow_prerelease: bool,
+    /// Package keys whose updates are held back.
+    #[serde(default)]
+    pub pinned: BTreeSet<String>,
+    /// Package keys hidden from the Installed list.
+    #[serde(default)]
+    pub ignored: BTreeSet<String>,
+    /// A self-update version the user chose to skip ("v0.2.0-b7").
+    #[serde(default)]
+    pub skip_self_update: Option<String>,
 }
 
 pub fn now_secs() -> u64 {
@@ -65,5 +78,9 @@ impl AppState {
         }
         fs::rename(&tmp, &final_path)?;
         Ok(())
+    }
+
+    pub fn has_wago_key(&self) -> bool {
+        self.wago_key.as_deref().map(|k| !k.trim().is_empty()).unwrap_or(false)
     }
 }

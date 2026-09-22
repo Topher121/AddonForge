@@ -13,6 +13,7 @@ pub async fn resolve(
     client: &reqwest::Client,
     id: &str,
     key: Option<&str>,
+    prerelease: bool,
 ) -> anyhow::Result<Remote> {
     let key = key
         .map(str::trim)
@@ -27,10 +28,12 @@ pub async fn resolve(
     }
     let v: Value = resp.error_for_status()?.json().await?;
     let recent = &v["recent_release"];
-    let rel = ["stable", "beta", "alpha"]
+    // Stable first unless the user allows beta builds; alpha only as a last resort.
+    let order: &[&str] = if prerelease { &["beta", "stable", "alpha"] } else { &["stable", "beta", "alpha"] };
+    let (channel, rel) = order
         .iter()
-        .map(|s| &recent[*s])
-        .find(|r| r.is_object())
+        .map(|s| (*s, &recent[*s]))
+        .find(|(_, r)| r.is_object())
         .ok_or_else(|| anyhow::anyhow!("Wago lists no release for Forever"))?;
     let version = rel["label"]
         .as_str()
@@ -50,5 +53,6 @@ pub async fn resolve(
         download_url,
         filename: format!("wago-{id}-{safe}.zip"),
         forever,
+        prerelease: channel != "stable",
     })
 }

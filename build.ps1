@@ -8,8 +8,9 @@
 # Output: build\AddonForge-v<ver>-b<build>.exe (old builds archived, keep 5)
 # Delivered: C:\Users\the owner\Desktop\PhoneApps\addonforge\ (sole exe + regenerated index.html + meta.json)
 
-#   .uild.ps1 -DeliverOnly            # no bump/build: re-deliver the newest build*.exe (e.g. after a locked-file failure)
-param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly)
+#   .\build.ps1 -DeliverOnly          # no bump/build: re-deliver the newest build\*.exe (e.g. after a locked-file failure)
+#   .\build.ps1 -Release              # also publish a GitHub release (tag v<ver>-b<n>) with the exe + latest.json
+param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly, [switch]$Release)
 $ErrorActionPreference = "Stop"
 $root  = $PSScriptRoot
 $tauri = Join-Path $root "src-tauri"
@@ -49,9 +50,9 @@ Write-Host "AddonForge v$version build $build" -ForegroundColor Cyan
 # ---- verify + build -----------------------------------------------------
 if ($DeliverOnly) {
     $exe = Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if (-not $exe) { throw "nothing in build to deliver" }
+    if (-not $exe) { throw "nothing in build\ to deliver" }
     $name = $exe.Name; $out = $exe.FullName
-    if ($name -match "-v(d+.d+.d+)-b(d+).exe$") { $version = $Matches[1]; $build = [int]$Matches[2] }
+    if ($name -match '-v(\d+\.\d+\.\d+)-b(\d+)\.exe$') { $version = $Matches[1]; $build = [int]$Matches[2] }
     $sizeMB = [math]::Round($exe.Length / 1MB, 1)
     Write-Host "re-delivering $name ($sizeMB MB)" -ForegroundColor Cyan
 } else {
@@ -65,6 +66,7 @@ try {
 
 Push-Location $root
 try {
+    $env:ADDONFORGE_BUILD = "$build"   # baked into the exe (selfupdate::build)
     npx tauri build --no-bundle
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
 } finally { Pop-Location }
@@ -126,3 +128,27 @@ $meta = [ordered]@{
 }
 WriteUtf8NoBom $metaPath ($meta | ConvertTo-Json)
 Write-Host "delivered to $phone  ->  http://192.168.1.64:8080/addonforge/" -ForegroundColor Green
+
+# ---- latest.json (self-update manifest) ----------------------------------
+# The app fetches https://github.com/Topher121/AddonForge/releases/latest/download/latest.json
+$tag = "v$version-b$build"
+$latest = [ordered]@{
+    version  = $version
+    build    = $build
+    filename = $name
+    url      = "https://github.com/Topher121/AddonForge/releases/download/$tag/$name"
+    size     = (Get-Item $out).Length
+    notes    = $whatsNew
+}
+$latestPath = Join-Path $root "build\latest.json"
+WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json)
+Copy-Item $latestPath (Join-Path $phone "latest.json") -Force
+
+if ($Release) {
+    Push-Location $root
+    try {
+        gh release create $tag $out $latestPath --title "AddonForge $tag" --notes "$whatsNew"
+        if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
+        Write-Host "published GitHub release $tag" -ForegroundColor Green
+    } finally { Pop-Location }
+}

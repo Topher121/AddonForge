@@ -5,6 +5,8 @@
 //!    same-volume rename (atomic per folder), never a slow cross-drive copy;
 //!  - existing folders are moved aside first and restored if anything fails;
 //!  - the zip crate refuses paths that escape the extraction directory;
+//!  - the extracted tree is scanned and refused if it contains anything
+//!    executable (addons are Lua, XML, TOC and media, nothing else);
 //!  - SavedVariables live in `WTF\`, which we never touch.
 
 use anyhow::{anyhow, Context};
@@ -15,6 +17,13 @@ use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const TMP_DIR: &str = ".addonforge-tmp";
+
+/// File types that have no business inside a WoW addon.
+const FORBIDDEN_EXT: &[&str] = &[
+    "exe", "dll", "sys", "scr", "com", "pif", "cpl", "msi", "msp", "bat", "cmd", "ps1", "psm1",
+    "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "jar", "py", "sh", "lnk", "reg", "inf",
+    "ocx", "drv", "app", "dmg", "apk",
+];
 
 fn unique() -> String {
     let n = SystemTime::now()
@@ -102,6 +111,54 @@ fn addon_dirs(extracted: &Path) -> anyhow::Result<Vec<PathBuf>> {
     Ok(with_toc)
 }
 
+/// Walk the extracted tree; refuse anything executable. Returns file count.
+pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
+    fn walk(root: &Path, dir: &Path, depth: usize, count: &mut usize) -> anyhow::Result<()> {
+        if depth > 32 {
+            anyhow::bail!("zip nests folders absurdly deep");
+        }
+        for e in fs::read_dir(dir)?.flatten() {
+            let p = e.path();
+            let ft = e.file_type()?;
+            if ft.is_symlink() {
+                anyhow::bail!("zip contains a symbolic link: {}", p.display());
+            }
+            if ft.is_dir() {
+                walk(root, &p, depth + 1, count)?;
+                continue;
+            }
+            *count += 1;
+            let name = e.file_name().to_string_lossy().to_string();
+            let lower = name.to_ascii_lowercase();
+            // "foo.lua.exe" style double extensions are caught by taking the last one.
+            let ext = lower.rsplit('.').next().unwrap_or("");
+            if lower.contains('.') && FORBIDDEN_EXT.contains(&ext) {
+                anyhow::bail!(
+                    "SAFETY: refused, the zip contains an executable file ({}) which no WoW addon needs",
+                    p.strip_prefix(root).unwrap_or(&p).display()
+                );
+            }
+            // Windows also runs by "magic": check the first bytes of anything unusual.
+            if !matches!(ext, "lua" | "xml" | "toc" | "tga" | "blp" | "png" | "jpg" | "jpeg" | "gif" | "ttf" | "otf" | "mp3" | "ogg" | "wav" | "txt" | "md" | "json" | "html" | "css" | "csv") {
+                if let Ok(mut f) = fs::File::open(&p) {
+                    let mut head = [0u8; 4];
+                    use std::io::Read;
+                    if f.read(&mut head).unwrap_or(0) >= 2 && &head[..2] == b"MZ" {
+                        anyhow::bail!(
+                            "SAFETY: refused, {} is a Windows executable in disguise",
+                            p.strip_prefix(root).unwrap_or(&p).display()
+                        );
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+    let mut count = 0;
+    walk(root, root, 0, &mut count)?;
+    Ok(count)
+}
+
 /// Extract `zip_path` and move its addon folders into `addons_dir`,
 /// replacing same-named folders. Returns the folder names installed.
 pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> {
@@ -116,6 +173,8 @@ pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> 
         let file = fs::File::open(zip_path)?;
         let mut archive = zip::ZipArchive::new(file).context("not a valid zip")?;
         archive.extract(&extract_dir).context("extract failed")?;
+        let files = safety_scan(&extract_dir)?;
+        crate::logi!("zip ok: {} files, no executables", files);
 
         let sources = addon_dirs(&extract_dir)?;
         let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new(); // (target, backup)
@@ -178,4 +237,27 @@ pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<V
         }
     }
     Ok(gone)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn safety_scan_refuses_executables() {
+        let root = std::env::temp_dir().join(format!("af-safety-{}", unique()));
+        let addon = root.join("Evil");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(addon.join("Evil.toc"), "## Interface: 16001\n").unwrap();
+        fs::write(addon.join("Evil.lua"), "print(1)\n").unwrap();
+        assert!(safety_scan(&root).is_ok());
+        fs::write(addon.join("helper.exe"), b"MZ\0\0").unwrap();
+        let err = safety_scan(&root).unwrap_err().to_string();
+        assert!(err.contains("SAFETY"), "{err}");
+        fs::remove_file(addon.join("helper.exe")).unwrap();
+        // Disguised: no extension, MZ header.
+        fs::write(addon.join("README"), b"MZ\x90\x00").unwrap();
+        assert!(safety_scan(&root).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
 }
