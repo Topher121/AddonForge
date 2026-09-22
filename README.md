@@ -35,6 +35,10 @@ On top of that there is a **catalogue**: [`catalog/forever.json`](catalog/foreve
 - "Report a problem" builds a diagnostics report you can read, then opens a GitHub issue or an email. Nothing leaves your PC until you press send.
 - Keeps a small local log next to its settings file, never uploaded.
 
+## How it's built
+
+Honest version: AddonForge is designed, tested and decided by one person with a design background, and most of the code is written with Claude (Anthropic's AI). Every choice about what it does and doesn't do (no accounts, no ads, no telemetry, no executables, only the AddOns folder) is the owner's, every build is tested on a real Forever install before release, and the tests run on every push. The whole thing is open source under the MIT licence precisely so you don't have to take any of that on trust: read it, run it, or don't. Bug reports and pull requests from people who read Rust are especially welcome.
+
 ## Sources
 
 | Source | Key needed? | Notes |
