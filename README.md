@@ -57,6 +57,6 @@ Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and
 ## Support
 
 Bugs and ideas: use **Report a problem** in the app's Settings tab (it fills in the diagnostics), open an issue, or email PocketForgeStudios@proton.me.
-If AddonForge saves you some hassle, the support link in the app's About tab keeps the lights on. No pressure.
+If AddonForge saves you some hassle, [a tip via PayPal](https://paypal.me/PocketForgeStudios) keeps the lights on. No pressure.
 
 Made by Pocket Forge Studios. MIT licensed, see [LICENSE](LICENSE).
