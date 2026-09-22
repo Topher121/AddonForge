@@ -55,6 +55,11 @@ npm run dev      # run with hot reload of the UI folder
 npm run build    # portable exe in src-tauri/target/release/
 ```
 
+The original ember-and-anvil app icon lives in `icon.svg`. Run
+`powershell -File scripts/make-icons.ps1` after editing it to refresh the header
+and packaged desktop icons, then rebuild the app. The Windows executable and
+installer both embed `src-tauri/icons/icon.ico`.
+
 ## Contributing
 
 Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and a pull request, validated automatically. Or open an "Add an addon" issue and we'll do it.
