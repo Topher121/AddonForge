@@ -1,3 +1,5 @@
+> Yes, I asked Claude how to write a Reddit post because this was my first one ever. The replies below were prep for the questions I guessed would come up. What I actually posted, I wrote myself.
+
 Submit link: https://www.reddit.com/r/wowforever/submit  (choose "Text" post; r/classicwow a day later if it lands well)
 
 Check the sidebar rules first: some game subs require a "Tool" or "Addon" flair or a self-promotion disclosure (the first line already says it is your own project).
