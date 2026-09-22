@@ -8,7 +8,8 @@
 # Output: build\AddonForge-v<ver>-b<build>.exe (old builds archived, keep 5)
 # Delivered: C:\Users\the owner\Desktop\PhoneApps\addonforge\ (sole exe + regenerated index.html + meta.json)
 
-param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests)
+#   .uild.ps1 -DeliverOnly            # no bump/build: re-deliver the newest build*.exe (e.g. after a locked-file failure)
+param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly)
 $ErrorActionPreference = "Stop"
 $root  = $PSScriptRoot
 $tauri = Join-Path $root "src-tauri"
@@ -26,9 +27,11 @@ if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "version must be x.y.z (got '$
 $buildFile = Join-Path $root "build\.buildnum"
 $build = 0
 if (Test-Path $buildFile) { $build = [int](Get-Content $buildFile -Raw).Trim() }
-$build++
-New-Item -ItemType Directory -Force (Join-Path $root "build") | Out-Null
-WriteUtf8NoBom $buildFile "$build"
+if (-not $DeliverOnly) {
+    $build++
+    New-Item -ItemType Directory -Force (Join-Path $root "build") | Out-Null
+    WriteUtf8NoBom $buildFile "$build"
+}
 
 if ($SetVersion) {
     foreach ($f in @($confPath, (Join-Path $root "package.json"))) {
@@ -44,6 +47,14 @@ if ($SetVersion) {
 Write-Host "AddonForge v$version build $build" -ForegroundColor Cyan
 
 # ---- verify + build -----------------------------------------------------
+if ($DeliverOnly) {
+    $exe = Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if (-not $exe) { throw "nothing in build to deliver" }
+    $name = $exe.Name; $out = $exe.FullName
+    if ($name -match "-v(d+.d+.d+)-b(d+).exe$") { $version = $Matches[1]; $build = [int]$Matches[2] }
+    $sizeMB = [math]::Round($exe.Length / 1MB, 1)
+    Write-Host "re-delivering $name ($sizeMB MB)" -ForegroundColor Cyan
+} else {
 Push-Location $tauri
 try {
     if (-not $SkipTests) {
@@ -69,10 +80,15 @@ Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-*.exe" |
     Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force
 $sizeMB = [math]::Round((Get-Item $out).Length / 1MB, 1)
 Write-Host "built $out ($sizeMB MB)" -ForegroundColor Green
+}
 
 # ---- deliver to PhoneApps ------------------------------------------------
 New-Item -ItemType Directory -Force $phone | Out-Null
-Get-ChildItem $phone -Filter "*.exe" | Remove-Item -Force
+# Old exes go; one that is currently running (locked) is left for the next build to clean up.
+Get-ChildItem $phone -Filter "*.exe" | Where-Object { $_.Name -ne $name } | ForEach-Object {
+    try { Remove-Item $_.FullName -Force -ErrorAction Stop }
+    catch { Write-Warning "could not remove $($_.Name) (in use?) - left in place, next build will retry" }
+}
 Copy-Item $out (Join-Path $phone $name) -Force
 Copy-Item (Join-Path $root "icon.svg") (Join-Path $phone "icon.svg") -Force
 
