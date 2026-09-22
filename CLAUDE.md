@@ -101,8 +101,8 @@ session). NOTE: `additionalBrowserArgs` REPLACES Tauri's defaults, so the
   the running one, starts it with `--replaced <old>`, exits; the new exe
   deletes the old file. Build number is baked in via `ADDONFORGE_BUILD`
   env at compile time (`option_env!`), 0 = dev build. Tested end-to-end
-  against a local server 2026-09-22. Only works once the repo is PUBLIC
-  (private release assets 404 anonymously).
+  against a local server 2026-09-22, and live against the real release
+  URL the same day once the repo went public.
 - **Install from GitHub link** (Browse tab box; `--cli github owner/repo`):
   key `github:<owner/repo>` unless the catalogue knows the repo. Managed
   source wins over catalogue/TOC when picking where to update from.
@@ -162,11 +162,12 @@ cover this — keep them green.
   builds (What's Training beta, Wayfinder) can't be installed yet.
 
 ## Studio hooks
-- Ship = commit AND push. GitHub `Topher121/AddonForge` (created 2026-09-22,
-  PRIVATE for now per studio convention). **the owner must decide when to make
-  it public**: the remote catalogue fetch and the "add by pull request"
-  story both need a public repo; until then the app silently uses the
-  bundled catalogue copy.
+- Ship = commit AND push. GitHub `Topher121/AddonForge` is **PUBLIC** (the owner
+  made the call 2026-09-22): the live catalogue fetch, pull-request
+  submissions and self-update all depend on that. Releases: `build.ps1
+  -Release` (or `-DeliverOnly -Release` to publish an existing build)
+  creates tag `v<ver>-b<n>` with the exe + latest.json. First public
+  release: v0.2.0-b3.
 - `build.ps1` (working since 2026-09-22): bumps `build\.buildnum`, optional
   `-SetVersion x.y.z` (syncs tauri.conf.json, Cargo.toml, package.json),
   runs `cargo test`, `npx tauri build --no-bundle`, archives to
