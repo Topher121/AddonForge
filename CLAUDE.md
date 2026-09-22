@@ -98,6 +98,21 @@ contains "addonforge", sum PrivateMemorySize64 (snippet in the 2026-09-22
 session). NOTE: `additionalBrowserArgs` REPLACES Tauri's defaults, so the
 `msWebOOUI,msPdfOOUI,msSmartScreenProtection` disable-features must stay.
 
+## Installer (added 2026-09-22, build 6)
+`npx tauri build` (no `--no-bundle`) also produces an NSIS installer
+`AddonForge_<ver>_x64-setup.exe`; build.ps1 copies it to
+`build\AddonForge-Setup-v<ver>-b<n>.exe` and attaches it to the release
+beside the portable exe. Per-user install (no admin): exe + uninstaller in
+`%LOCALAPPDATA%\AddonForge\addonforge.exe`, Start-menu shortcut,
+Settings → Apps uninstall entry. Silent install: `-Setup.exe /S`.
+Self-update tells the two apart by filename: `AddonForge-v*-b*.exe` =
+portable (new file beside the old one), anything else = installed
+(rename running exe to `.exe.old`, put the new build at the SAME path so
+shortcuts keep working, new process deletes `.old`). Both paths tested
+against a local server 2026-09-22. latest.json always points at the raw
+exe, never the installer: an installed copy updates by swapping its exe.
+the owner installed build 6 on this PC that day.
+
 ## v0.2.0 features (built 2026-09-22, all the owner-approved that day)
 - **Self-update**: build.ps1 writes `build\latest.json` ({version, build,
   filename, url, size, notes}); `-Release` publishes a GitHub release

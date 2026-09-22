@@ -2,7 +2,12 @@
 
 A small, fast addon manager for **World of Warcraft: Forever**.
 
-**[Download the latest release](https://github.com/Topher121/AddonForge/releases/latest)** (Windows 10/11, portable exe, no installer). Windows may show "Windows protected your PC" the first time because the exe isn't code-signed yet: click *More info*, then *Run anyway*.
+**[Download the latest release](https://github.com/Topher121/AddonForge/releases/latest)** for Windows 10/11. Two flavours, same app:
+
+- `AddonForge-Setup-…exe`: installs to your user folder with a Start menu shortcut and an uninstaller. No admin rights needed.
+- `AddonForge-v…exe`: portable, run it from anywhere, nothing installed.
+
+Either one updates itself when a new build is out. Windows may show "Windows protected your PC" the first time because the files aren't code-signed yet: click *More info*, then *Run anyway*.
 
 ![AddonForge showing installed addons with update status](docs/screenshot.png)
 
