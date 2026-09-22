@@ -78,17 +78,54 @@ very little memory and has no privacy issues. Decisions locked that day:
 - `ui/app.js` — three tabs: Installed (check/update/remove), Browse
   (catalogue install), Settings (install folder, Wago key, about).
 
-## Footprint (measured 2026-09-22, v0.1.0 b1, 20s idle after launch)
-Exe 4.9 MB on disk. Private memory: the AddonForge process ~6 MB, plus six
-WebView2 (msedgewebview2.exe) helper processes ~162 MB → **~170 MB private
-total** (working set ~350 MB, but that double-counts shared Edge pages).
-Lighter than Electron (WowUp) but nowhere near "tiny": WebView2 is the
-cost. Ideas if the owner wants it lower: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS`
-(`--disable-gpu`, `--renderer-process-limit=1`), or a native egui window
-instead of a webview (bigger rewrite). Measure with the PowerShell snippet
-in the 2026-09-22 session: Get-CimInstance Win32_Process filtered on the
-exe pid + msedgewebview2 whose CommandLine contains "addonforge", sum
-PrivateMemorySize64.
+## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
+Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
+helper processes; working set ~350 MB but that double-counts shared Edge
+pages). v0.2.0 added `additionalBrowserArgs` in tauri.conf.json
+(`--disable-gpu --in-process-gpu --renderer-process-limit=1`, background
+networking/component-update/crash reporter off, plus
+`--enable-features=NetworkServiceInProcess2`): **~97 MB private**, five
+processes, GPU and network-service processes gone. WebView2 is the floor; going lower means a native egui window
+instead of a webview (big rewrite, not planned). Measure: Get-CimInstance
+Win32_Process filtered on the exe pid + msedgewebview2 whose CommandLine
+contains "addonforge", sum PrivateMemorySize64 (snippet in the 2026-09-22
+session). NOTE: `additionalBrowserArgs` REPLACES Tauri's defaults, so the
+`msWebOOUI,msPdfOOUI,msSmartScreenProtection` disable-features must stay.
+
+## v0.2.0 features (built 2026-09-22, all the owner-approved that day)
+- **Self-update**: build.ps1 writes `build\latest.json` ({version, build,
+  filename, url, size, notes}); `-Release` publishes a GitHub release
+  `v<ver>-b<n>` with the exe + latest.json. The app fetches
+  `releases/latest/download/latest.json` on launch (`ADDONFORGE_UPDATE_URL`
+  env overrides for testing), shows a banner, downloads the new exe BESIDE
+  the running one, starts it with `--replaced <old>`, exits; the new exe
+  deletes the old file. Build number is baked in via `ADDONFORGE_BUILD`
+  env at compile time (`option_env!`), 0 = dev build. Tested end-to-end
+  against a local server 2026-09-22. Only works once the repo is PUBLIC
+  (private release assets 404 anonymously).
+- **Install from GitHub link** (Browse tab box; `--cli github owner/repo`):
+  key `github:<owner/repo>` unless the catalogue knows the repo. Managed
+  source wins over catalogue/TOC when picking where to update from.
+- **Pre-release toggle** (Settings → Updates; state `allow_prerelease`):
+  GitHub uses the API list (1 call per addon, 60/hr unauth) and prefers a
+  release's own release.json asset; Wago prefers beta over stable.
+- **Missing dependencies**: required deps (`## Dependencies` /
+  `RequiredDeps`, minus `Blizzard_*`) not on disk are listed per package
+  with an install button when the catalogue has them.
+- **Pin / Ignore** (state `pinned` / `ignored` sets): pinned = excluded
+  from Update All, still checked; ignored = hidden + not checked.
+- **Export / Import** (Settings → Your addon list): JSON
+  `{addonforge:1, flavor, addons:[{name,key,source,version,folders}]}`;
+  import shows a plan and installs the missing installable ones.
+- **Report a problem**: builds diagnostics (version, install, addon list,
+  last 40 log lines) → prefilled GitHub issue or mailto to the studio
+  address, plus copy-to-clipboard. Deliberately NOT the studio Firestore
+  reporter: this app promises no telemetry.
+- **Local log**: `%APPDATA%\AddonForge\addonforge.log`, 1 MB rotation,
+  `logi!`/`loge!` macros (src/log.rs). Never uploaded.
+- **Zip safety** (install.rs `safety_scan`): after extraction, refuse the
+  whole install if any file has an executable extension (exe/dll/bat/ps1/
+  js/…) or starts with an `MZ` header, or is a symlink. Unit-tested.
 
 ## Headless mode (use it to test; no window needed)
 `addonforge.exe --cli <cmd>` prints JSON: `installs` (drive scan, auto-picks

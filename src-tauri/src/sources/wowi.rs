@@ -49,5 +49,6 @@ pub async fn resolve(client: &reqwest::Client, id: u64) -> anyhow::Result<Remote
         download_url: d.download,
         filename,
         forever,
+        prerelease: false,
     })
 }

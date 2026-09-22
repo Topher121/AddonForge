@@ -22,18 +22,34 @@
   </nav>
 </header>
 
+<div id="selfupdate" class="banner hidden">
+  <span id="selfupdate-text"></span>
+  <span class="grow"></span>
+  <button id="selfupdate-go" class="pill small">Update now</button>
+  <button id="selfupdate-skip" class="pill small ghost">Skip this one</button>
+</div>
+
 <main>
   <section id="tab-installed" class="panel active">
     <div class="toolbar">
       <button id="btn-check" class="pill">Check for updates</button>
       <button id="btn-update-all" class="pill ghost" disabled>Update all</button>
       <button id="btn-rescan" class="pill ghost">Rescan</button>
+      <input id="installed-filter" type="search" placeholder="Filter…" class="narrow">
+      <label class="chk"><input type="checkbox" id="show-ignored"> show ignored</label>
       <span id="summary" class="summary"></span>
     </div>
     <div id="installed-list" class="list"></div>
   </section>
 
   <section id="tab-browse" class="panel">
+    <div class="card slim">
+      <div class="row">
+        <input id="gh-repo" type="text" placeholder="Install from GitHub: paste a repo URL or owner/name">
+        <button id="btn-gh-install" class="pill">Install</button>
+      </div>
+      <div class="muted small">Works for any addon whose author publishes GitHub releases, listed here or not.</div>
+    </div>
     <div class="toolbar">
       <input id="browse-filter" type="search" placeholder="Filter the catalogue…">
       <button id="btn-catalog-refresh" class="pill ghost">Refresh catalogue</button>
@@ -58,6 +74,12 @@
     </div>
 
     <div class="card">
+      <h2>Updates</h2>
+      <label class="chk big"><input type="checkbox" id="pref-prerelease"> Include pre-releases and beta builds</label>
+      <p class="muted">Some addons only ship their Forever build as a GitHub pre-release or a Wago beta. Turn this on to see and install those. Uses the GitHub API for the check, which is limited to 60 requests an hour without a token.</p>
+    </div>
+
+    <div class="card">
       <h2>Wago Addons key <span class="tag">optional</span></h2>
       <p class="muted">Some addons only publish on Wago. Wago's API needs a key, which is free: <a href="#" data-url="" id="wago-link">get one here</a>, paste it below. It is stored on this PC and only ever sent to addons.wago.io.</p>
       <div class="row">
@@ -69,11 +91,34 @@
     </div>
 
     <div class="card">
+      <h2>Your addon list</h2>
+      <p class="muted">Export the list of what you have installed (names and sources, no settings) to share with a friend or move to another PC. Import one to install everything on it.</p>
+      <div class="row">
+        <button id="btn-export" class="pill ghost">Export list…</button>
+        <button id="btn-import" class="pill ghost">Import list…</button>
+      </div>
+      <div id="import-plan" class="hidden"></div>
+    </div>
+
+    <div class="card">
+      <h2>Report a problem</h2>
+      <p class="muted">Something broke? This builds a report with your version, install folder, addon list and the last few log lines. Nothing is sent until you press send in your browser or email app, and you can read it all first.</p>
+      <div class="row">
+        <button id="btn-report-gh" class="pill">Report on GitHub</button>
+        <button id="btn-report-mail" class="pill ghost">Email the dev</button>
+        <button id="btn-copy-diag" class="pill ghost">Copy diagnostics</button>
+        <button id="btn-open-log" class="link">Open the log file</button>
+      </div>
+      <pre id="diag" class="diag hidden"></pre>
+    </div>
+
+    <div class="card">
       <h2>About</h2>
-      <p class="muted">AddonForge <span id="version"></span> by Pocket Forge Studios. No accounts, no ads, no analytics. The app talks only to the addon sites themselves (GitHub, Wago, WoWInterface, TukUI).</p>
+      <p class="muted">AddonForge <span id="version"></span> by Pocket Forge Studios. No accounts, no ads, no analytics. The app talks only to the addon sites themselves (GitHub, Wago, WoWInterface, TukUI) and to GitHub once at launch to see if AddonForge itself has an update.</p>
       <p class="muted">Catalogue: <span id="catalog-info">…</span></p>
       <p class="muted">Settings file: <code id="state-file"></code></p>
       <p class="muted"><a href="#" data-url="https://github.com/Topher121/AddonForge">Source code &amp; catalogue on GitHub</a> · <a href="#" data-url="https://ko-fi.com/pocketforgestudios">Support the dev</a> · <a href="#" data-url="mailto:PocketForgeStudios@proton.me">PocketForgeStudios@proton.me</a></p>
+      <button id="btn-selfcheck" class="link">Check for an AddonForge update now</button>
     </div>
   </section>
 </main>
