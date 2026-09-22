@@ -184,7 +184,9 @@ cover this — keep them green.
   `addonforge`, tenant `design`, phase proto 15%). Office write-backs go to
   `tenant=design&project=addonforge`. Studio FAQ row added the same day.
 - Support email everywhere: PocketForgeStudios@proton.me. "Support the dev"
-  link (About tab + README) is the owner's PayPal.Me: https://paypal.me/PocketForgeStudios
-  (confirmed 2026-09-22; personal account, name visible, the owner is fine with that).
+  link (About tab + README) is the STUDIO Ko-fi: https://ko-fi.com/pocketforgestudios
+  (the owner set it up 2026-09-22 with a PayPal Business account
+  paypal.me/PocketForgeStudios underneath; both logged in the studio ledger +
+  FAQ). Never link a personal PayPal again; build 4 briefly did.
 - Related: the owner writes his own Forever addons in `Desktop\wow-addons`
   (FishEasy, RepHelper — they show as "No source" here, which is correct).
