@@ -183,8 +183,8 @@ cover this — keep them green.
 - Launcher card + `PhoneApps\projects.json` entry added 2026-09-22 (slug
   `addonforge`, tenant `design`, phase proto 15%). Office write-backs go to
   `tenant=design&project=addonforge`. Studio FAQ row added the same day.
-- Support email everywhere: PocketForgeStudios@proton.me. The Ko-fi link in
-  the About card (`ko-fi.com/pocketforgestudios`) is a PLACEHOLDER until
-  the owner confirms the real support link.
+- Support email everywhere: PocketForgeStudios@proton.me. "Support the dev"
+  link (About tab + README) is the owner's PayPal.Me: https://paypal.me/PocketForgeStudios
+  (confirmed 2026-09-22; personal account, name visible, the owner is fine with that).
 - Related: the owner writes his own Forever addons in `Desktop\wow-addons`
   (FishEasy, RepHelper — they show as "No source" here, which is correct).
