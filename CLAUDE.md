@@ -168,13 +168,18 @@ cover this — keep them green.
   -Release` (or `-DeliverOnly -Release` to publish an existing build)
   creates tag `v<ver>-b<n>` with the exe + latest.json. First public
   release: v0.2.0-b3.
-- `build.ps1` (working since 2026-09-22): bumps `build\.buildnum`, optional
+- `build.ps1` (working since 2026-09-22): bumps `build.buildnum`, optional
   `-SetVersion x.y.z` (syncs tauri.conf.json, Cargo.toml, package.json),
-  runs `cargo test`, `npx tauri build --no-bundle`, archives to
-  `build\AddonForge-v<ver>-b<n>.exe` (keeps 5), delivers the sole exe +
-  regenerated `index.html` + `meta.json` (`-Note "..."`) to
-  `PhoneApps\addonforge\`. Keep it ASCII-only (PS 5.1 chokes on UTF-8
-  punctuation without a BOM).
+  runs `cargo test`, `npx tauri build --no-bundle` with `ADDONFORGE_BUILD`
+  set, archives to `buildAddonForge-v<ver>-b<n>.exe` (keeps 5), writes
+  `buildlatest.json` + `build.note` (`-Note "..."`, omitted = previous),
+  and with `-Release` publishes the GitHub release. `-DeliverOnly -Release`
+  publishes the newest existing exe. Keep it ASCII-only (PS 5.1 chokes on
+  UTF-8 punctuation without a BOM).
+- **NOT on the PhoneApps page** (the owner 2026-09-22: it is a Windows tool,
+  GitHub Releases is the download). The PhoneApps folder + launcher card
+  were removed; `PhoneAppsprojects.json` keeps the desk entry (slug
+  `addonforge`, tenant `design`) with a note. Do not re-add a card.
 - Launcher card + `PhoneApps\projects.json` entry added 2026-09-22 (slug
   `addonforge`, tenant `design`, phase proto 15%). Office write-backs go to
   `tenant=design&project=addonforge`. Studio FAQ row added the same day.
