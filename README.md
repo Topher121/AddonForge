@@ -70,3 +70,5 @@ Bugs and ideas: use **Report a problem** in the app's Settings tab (it fills in 
 If AddonForge saves you some hassle, [a tip on Ko-fi](https://ko-fi.com/pocketforgestudios) keeps the lights on. No pressure.
 
 Made by Pocket Forge Studios. MIT licensed, see [LICENSE](LICENSE).
+
+AddonForge is an independent project. It is not affiliated with, endorsed by or connected to CurseForge, Overwolf, Blizzard Entertainment, Wago, WoWInterface or TukUI. World of Warcraft is a trademark of Blizzard Entertainment.
