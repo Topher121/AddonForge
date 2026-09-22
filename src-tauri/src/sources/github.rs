@@ -75,8 +75,14 @@ pub async fn resolve(
                 None => anyhow::bail!("release.json lists no files"),
             },
         };
+        let version = if pick.version.trim().is_empty() {
+            // Some packager configs leave version blank; the filename still carries it.
+            pick.filename.trim_end_matches(".zip").to_string()
+        } else {
+            pick.version.clone()
+        };
         return Ok(Remote {
-            version: pick.version.clone(),
+            version,
             download_url: format!("{base}{}", pick.filename),
             filename: pick.filename.clone(),
             forever: Some(is_forever_build),

@@ -131,10 +131,22 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
     }
     let has_wago = st.wago_key.as_deref().map(|k| !k.trim().is_empty()).unwrap_or(false);
 
-    // key -> (entry, folders)
-    let mut groups: Vec<(String, Option<&CatalogEntry>, Vec<&AddonFolder>)> = Vec::new();
-    let mut index: HashMap<String, usize> = HashMap::new();
-    for f in folders {
+    // Folders we installed ourselves are authoritative: they stay with their package.
+    let mut managed_folder: HashMap<String, &str> = HashMap::new();
+    for (key, rec) in &st.installed {
+        for f in &rec.folders {
+            managed_folder.insert(f.to_ascii_lowercase(), key.as_str());
+        }
+    }
+    let on_disk: HashMap<String, &AddonFolder> =
+        folders.iter().map(|f| (f.folder.to_ascii_lowercase(), f)).collect();
+
+    // First pass: direct keys (managed / catalogue / ids / standalone).
+    let direct_key = |f: &AddonFolder| -> (String, Option<&CatalogEntry>) {
+        if let Some(k) = managed_folder.get(&f.folder.to_ascii_lowercase()) {
+            let entry = k.strip_prefix("cat:").and_then(|id| cat.addons.iter().find(|e| e.id == id));
+            return ((*k).to_string(), entry);
+        }
         let entry = by_folder
             .get(&f.folder.to_ascii_lowercase())
             .copied()
@@ -152,8 +164,72 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         } else {
             format!("folder:{}", f.folder)
         };
+        (key, entry)
+    };
+
+    // Does `f` look like a module of `parent` (e.g. BigWigs_Sporefall -> BigWigs,
+    // DBM-GUI -> DBM-Core)? Needs a declared dependency and a shared name prefix.
+    fn module_of<'a>(f: &AddonFolder, on_disk: &HashMap<String, &'a AddonFolder>) -> Option<&'a AddonFolder> {
+        if let Some(p) = &f.part_of {
+            if let Some(parent) = on_disk.get(&p.to_ascii_lowercase()) {
+                return Some(parent);
+            }
+        }
+        let stem = |s: &str| s.split(['_', '-']).next().unwrap_or(s).to_ascii_lowercase();
+        let my_stem = stem(&f.folder);
+        for d in &f.dependencies {
+            if let Some(parent) = on_disk.get(&d.to_ascii_lowercase()) {
+                if parent.folder != f.folder && stem(&parent.folder) == my_stem {
+                    return Some(parent);
+                }
+            }
+        }
+        None
+    }
+
+    let mut keyed: Vec<(String, Option<&CatalogEntry>, &AddonFolder)> = Vec::with_capacity(folders.len());
+    for f in folders {
+        let (k, e) = direct_key(f);
+        keyed.push((k, e, f));
+    }
+    // Second pass: standalone folders that are modules of another addon inherit its key.
+    let key_of: HashMap<String, (String, Option<&CatalogEntry>)> = keyed
+        .iter()
+        .map(|(k, e, f)| (f.folder.to_ascii_lowercase(), (k.clone(), *e)))
+        .collect();
+    for item in keyed.iter_mut() {
+        if !item.0.starts_with("folder:") {
+            continue;
+        }
+        let mut cur = item.2;
+        // Walk up at most a few levels (module -> core -> catalogue entry).
+        for _ in 0..4 {
+            match module_of(cur, &on_disk) {
+                Some(parent) => {
+                    if let Some((k, e)) = key_of.get(&parent.folder.to_ascii_lowercase()) {
+                        if !k.starts_with("folder:") || parent.folder != cur.folder {
+                            item.0 = k.clone();
+                            item.1 = *e;
+                        }
+                    }
+                    cur = parent;
+                }
+                None => break,
+            }
+        }
+    }
+
+    // key -> (entry, folders)
+    let mut groups: Vec<(String, Option<&CatalogEntry>, Vec<&AddonFolder>)> = Vec::new();
+    let mut index: HashMap<String, usize> = HashMap::new();
+    for (key, entry, f) in keyed {
         match index.get(&key) {
-            Some(&i) => groups[i].2.push(f),
+            Some(&i) => {
+                groups[i].2.push(f);
+                if groups[i].1.is_none() {
+                    groups[i].1 = entry;
+                }
+            }
             None => {
                 index.insert(key.clone(), groups.len());
                 groups.push((key, entry, vec![f]));
@@ -163,10 +239,17 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
 
     let mut out = Vec::new();
     for (key, entry, fs) in groups {
-        // Primary folder: shortest name (BigWigs over BigWigs_Core) that has a title.
+        // Primary folder: one nothing else in the group depends on being a
+        // module of (the root: DBM-Core over DBM-GUI), then the shortest name
+        // (BigWigs over BigWigs_Core).
+        let in_group: Vec<String> = fs.iter().map(|f| f.folder.to_ascii_lowercase()).collect();
+        let is_root = |f: &AddonFolder| {
+            !f.dependencies.iter().any(|d| in_group.contains(&d.to_ascii_lowercase()))
+                && f.part_of.as_ref().map(|p| !in_group.contains(&p.to_ascii_lowercase())).unwrap_or(true)
+        };
         let primary = fs
             .iter()
-            .min_by_key(|f| (f.folder.len(), f.folder.clone()))
+            .min_by_key(|f| (!is_root(f), f.folder.len(), f.folder.clone()))
             .copied()
             .unwrap();
         let managed = st.installed.get(&key);
@@ -238,14 +321,19 @@ async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
     if matches!(src, Source::Wago(_)) && st.wago_key.as_deref().map(|k| k.trim().is_empty()).unwrap_or(true) {
         return;
     }
-    let hint = pkg
+    let entry = pkg
         .catalog_id
         .as_ref()
-        .and_then(|id| cat.addons.iter().find(|e| &e.id == id))
-        .and_then(|e| e.asset_hint.clone());
+        .and_then(|id| cat.addons.iter().find(|e| &e.id == id));
+    let hint = entry.and_then(|e| e.asset_hint.clone());
     let opts = ResolveOpts { asset_hint: hint.as_deref(), wago_key: st.wago_key.as_deref() };
     match sources::resolve(&app.client, &src, opts).await {
-        Ok(r) => {
+        Ok(mut r) => {
+            // Some authors list 16001 in the TOC but never added "forever" to
+            // release.json. If the catalogue vouches for it, don't scare people.
+            if r.forever == Some(false) && entry.and_then(|e| e.forever) == Some(true) {
+                r.forever = None;
+            }
             let same = pkg
                 .installed_version
                 .as_deref()
@@ -398,7 +486,16 @@ async fn install_from(
     let st = app.state.lock().await.clone();
     let opts = ResolveOpts { asset_hint, wago_key: st.wago_key.as_deref() };
     let remote = sources::resolve(&app.client, src, opts).await.map_err(err)?;
-    if remote.forever == Some(false) && !allow_non_forever {
+    let vouched = match key.strip_prefix("cat:") {
+        Some(id) => catalog_cached(app)
+            .await
+            .addons
+            .iter()
+            .find(|e| e.id == id)
+            .and_then(|e| e.forever),
+        None => None,
+    };
+    if remote.forever == Some(false) && !allow_non_forever && vouched != Some(true) {
         return Err("NOT_FOREVER".into());
     }
     let tmp = addons.join(install::TMP_DIR).join("dl");
@@ -595,6 +692,54 @@ pub fn cli(args: &[String]) -> i32 {
                 let cat = catalog_cached(&app).await;
                 Ok(serde_json::to_value(cat).unwrap())
             }
+            "resolve" => {
+                // Dry run: what would we download for these catalogue ids (or "all")?
+                let cat = catalog_cached(&app).await;
+                let st = app.state.lock().await.clone();
+                let has_wago = st.wago_key.as_deref().map(|k| !k.trim().is_empty()).unwrap_or(false);
+                let want: Vec<&CatalogEntry> = if args.get(1).map(String::as_str) == Some("all") {
+                    cat.addons.iter().collect()
+                } else {
+                    cat.addons.iter().filter(|e| args[1..].iter().any(|a| a == &e.id)).collect()
+                };
+                let sem = Arc::new(Semaphore::new(8));
+                let mut set = tokio::task::JoinSet::new();
+                for e in want {
+                    let e = e.clone();
+                    let app = app.clone();
+                    let sem = sem.clone();
+                    let key = st.wago_key.clone();
+                    set.spawn(async move {
+                        let _p = sem.acquire().await;
+                        let src = pick_source(Some(&e), &AddonFolder::default(), has_wago);
+                        let r = match &src {
+                            Some(s) => sources::resolve(
+                                &app.client,
+                                s,
+                                ResolveOpts { asset_hint: e.asset_hint.as_deref(), wago_key: key.as_deref() },
+                            )
+                            .await
+                            .map_err(|x| x.to_string()),
+                            None => Err("link-only".into()),
+                        };
+                        serde_json::json!({
+                            "id": e.id,
+                            "source": src.map(|s| s.label()),
+                            "ok": r.is_ok(),
+                            "version": r.as_ref().ok().map(|r| r.version.clone()),
+                            "forever": r.as_ref().ok().and_then(|r| r.forever),
+                            "file": r.as_ref().ok().map(|r| r.filename.clone()),
+                            "error": r.err(),
+                        })
+                    });
+                }
+                let mut rows = Vec::new();
+                while let Some(Ok(v)) = set.join_next().await {
+                    rows.push(v);
+                }
+                rows.sort_by(|a, b| a["id"].as_str().cmp(&b["id"].as_str()));
+                Ok(serde_json::Value::Array(rows))
+            }
             "update" => {
                 let key = args.get(1).ok_or("usage: update <package key>")?;
                 let pkgs = scan_packages(&app).await?;
@@ -621,7 +766,7 @@ pub fn cli(args: &[String]) -> i32 {
                 let rec = install_from(&app, &format!("cat:{}", e.id), &src, e.asset_hint.as_deref(), force).await?;
                 Ok(serde_json::to_value(rec).unwrap())
             }
-            _ => Err("usage: addonforge --cli installs | use <dir> | scan | check | catalog | update <key> [--force] | install <catalog-id> [--force]".into()),
+            _ => Err("usage: addonforge --cli installs | use <dir> | scan | check | catalog | resolve <id..>|all | update <key> [--force] | install <catalog-id> [--force]".into()),
         }
     });
     match res {
@@ -658,4 +803,64 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running AddonForge");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn folder(name: &str, deps: &[&str], part_of: Option<&str>) -> AddonFolder {
+        AddonFolder {
+            folder: name.into(),
+            title: name.into(),
+            version: Some("1.0".into()),
+            dependencies: deps.iter().map(|s| s.to_string()).collect(),
+            part_of: part_of.map(|s| s.to_string()),
+            interfaces: vec![16001],
+            forever_interface: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn modules_group_under_their_core_without_catalogue() {
+        let st = AppState::default();
+        let cat = Catalog::default();
+        let folders = vec![
+            folder("DBM-Core", &[], None),
+            folder("DBM-GUI", &["DBM-Core"], None),
+            folder("DBM-StatusBarTimers", &["DBM-Core"], None),
+            folder("BigWigs", &[], None),
+            folder("BigWigs_Core", &["BigWigs"], None),
+            folder("BigWigs_Sporefall", &["BigWigs_Core"], None),
+            folder("Plater", &[], None),
+            folder("LibStub", &[], None),
+            folder("SomeAddon", &["LibStub"], None),
+            folder("ModuleX", &[], Some("Plater")),
+        ];
+        let pkgs = build_packages(&st, &cat, &folders);
+        let names: Vec<(String, usize)> = pkgs.iter().map(|p| (p.name.clone(), p.folders.len())).collect();
+        assert!(names.contains(&("DBM-Core".into(), 3)), "{names:?}");
+        assert!(names.contains(&("BigWigs".into(), 3)), "{names:?}");
+        assert!(names.contains(&("Plater".into(), 2)), "{names:?}");
+        assert!(names.contains(&("LibStub".into(), 1)), "{names:?}");
+        assert!(names.contains(&("SomeAddon".into(), 1)), "{names:?}");
+        assert_eq!(pkgs.len(), 5);
+    }
+
+    #[test]
+    fn managed_folders_stay_with_their_package() {
+        let mut st = AppState::default();
+        st.installed.insert(
+            "cat:bigwigs".into(),
+            Installed { source: "github".into(), source_id: "x".into(), version: "v1".into(), folders: vec!["BigWigs".into(), "BigWigs_Zone".into()], installed_at: 0 },
+        );
+        let cat: Catalog = serde_json::from_str(r#"{"addons":[{"id":"bigwigs","name":"BigWigs","github":"a/b","folders":["BigWigs"]}]}"#).unwrap();
+        let folders = vec![folder("BigWigs", &[], None), folder("BigWigs_Zone", &[], None)];
+        let pkgs = build_packages(&st, &cat, &folders);
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].folders.len(), 2);
+        assert_eq!(pkgs[0].installed_version.as_deref(), Some("v1"));
+        assert!(pkgs[0].managed);
+    }
 }
