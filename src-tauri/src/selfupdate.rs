@@ -88,8 +88,21 @@ pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> Self
     out
 }
 
-/// Download the new exe beside the current one and hand over to it.
-/// Returns the path of the new exe; the caller exits the process after.
+/// Is this exe the portable download (`AddonForge-v0.2.0-b5.exe`) rather
+/// than an installed copy (`AddonForge.exe` under the installer's folder)?
+fn is_portable(exe: &Path) -> bool {
+    let name = exe.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    name.starts_with("addonforge-v") && name.contains("-b") && name.ends_with(".exe")
+}
+
+/// Download the new exe and hand over to it. Returns the path of the exe
+/// that will be running next; the caller exits the process after.
+///
+/// Portable: the new build lands BESIDE the old file under its own
+/// versioned name, and the new process deletes the old file.
+/// Installed: the running exe is renamed to `.old` and the new build takes
+/// its exact path, so Start-menu shortcuts and the uninstaller keep working;
+/// the new process deletes the `.old` file.
 pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<PathBuf> {
     let current = std::env::current_exe()?;
     let dir = current.parent().ok_or_else(|| anyhow::anyhow!("no exe dir"))?;
@@ -101,8 +114,9 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
     if name.contains(['/', '\\']) || !name.to_ascii_lowercase().ends_with(".exe") {
         anyhow::bail!("refusing odd update filename {name}");
     }
-    let target = dir.join(&name);
-    if target == current {
+    let portable = is_portable(&current);
+    let target = if portable { dir.join(&name) } else { current.clone() };
+    if portable && target == current {
         anyhow::bail!("update has the same filename as the running exe");
     }
     let tmp = dir.join(format!("{name}.part"));
@@ -114,14 +128,36 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         anyhow::bail!("downloaded size {} does not match the release's {}", bytes.len(), latest.size);
     }
     std::fs::write(&tmp, &bytes)?;
-    if target.exists() {
-        std::fs::remove_file(&target)?;
+    let old: PathBuf;
+    if portable {
+        if target.exists() {
+            std::fs::remove_file(&target)?;
+        }
+        std::fs::rename(&tmp, &target)?;
+        old = current.clone();
+    } else {
+        // A running exe can be renamed on Windows, just not overwritten.
+        old = current.with_extension("exe.old");
+        if old.exists() {
+            std::fs::remove_file(&old)?;
+        }
+        std::fs::rename(&current, &old)?;
+        if let Err(e) = std::fs::rename(&tmp, &target) {
+            // Put things back rather than leave the app with no exe.
+            let _ = std::fs::rename(&old, &current);
+            return Err(e.into());
+        }
     }
-    std::fs::rename(&tmp, &target)?;
-    crate::logi!("self-update: downloaded {} ({} bytes), handing over", target.display(), bytes.len());
+    crate::logi!(
+        "self-update: {} -> {} ({} bytes, {}), handing over",
+        current.display(),
+        target.display(),
+        bytes.len(),
+        if portable { "portable" } else { "in place" }
+    );
     std::process::Command::new(&target)
         .arg("--replaced")
-        .arg(&current)
+        .arg(&old)
         .spawn()?;
     Ok(target)
 }

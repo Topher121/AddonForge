@@ -48,9 +48,10 @@ Write-Host "AddonForge v$version build $build" -ForegroundColor Cyan
 
 # ---- verify + build -----------------------------------------------------
 if ($DeliverOnly) {
-    $exe = Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    $exe = Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-v*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
     if (-not $exe) { throw "nothing in build\ to deliver" }
     $name = $exe.Name; $out = $exe.FullName
+    $setupName = ($name -replace "^AddonForge-", "AddonForge-Setup-")
     if ($name -match '-v(\d+\.\d+\.\d+)-b(\d+)\.exe$') { $version = $Matches[1]; $build = [int]$Matches[2] }
     $sizeMB = [math]::Round($exe.Length / 1MB, 1)
     Write-Host "reusing $name ($sizeMB MB)" -ForegroundColor Cyan
@@ -66,7 +67,7 @@ try {
 Push-Location $root
 try {
     $env:ADDONFORGE_BUILD = "$build"   # baked into the exe (selfupdate::build)
-    npx tauri build --no-bundle
+    npx tauri build                    # exe + NSIS installer (bundle targets in tauri.conf.json)
     if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
 } finally { Pop-Location }
 
@@ -77,10 +78,17 @@ if (-not (Test-Path $exe)) { throw "expected $exe" }
 $name = "AddonForge-v$version-b$build.exe"
 $out  = Join-Path $root "build\$name"
 Copy-Item $exe $out -Force
-Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-*.exe" |
+Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-v*.exe" |
     Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force
 $sizeMB = [math]::Round((Get-Item $out).Length / 1MB, 1)
 Write-Host "built $out ($sizeMB MB)" -ForegroundColor Green
+$setupSrc = Get-ChildItem (Join-Path $tauri "target\release\bundle\nsis") -Filter "*-setup.exe" | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+if ($setupSrc) {
+    $setupName = "AddonForge-Setup-v$version-b$build.exe"
+    Copy-Item $setupSrc.FullName (Join-Path $root "build\$setupName") -Force
+    Get-ChildItem (Join-Path $root "build") -Filter "AddonForge-Setup-*.exe" | Sort-Object LastWriteTime -Descending | Select-Object -Skip 5 | Remove-Item -Force
+    Write-Host "built installer build\$setupName" -ForegroundColor Green
+}
 }
 
 # ---- release note ----------------------------------------------------------
@@ -107,7 +115,10 @@ WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json)
 if ($Release) {
     Push-Location $root
     try {
-        gh release create $tag $out $latestPath --title "AddonForge $tag" --notes "$whatsNew"
+        $assets = @($out, $latestPath)
+        $setupPath = Join-Path $root "build\$setupName"
+        if ($setupName -and (Test-Path $setupPath)) { $assets += $setupPath }
+        gh release create $tag @assets --title "AddonForge $tag" --notes "$whatsNew"
         if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
         Write-Host "published GitHub release $tag" -ForegroundColor Green
     } finally { Pop-Location }
