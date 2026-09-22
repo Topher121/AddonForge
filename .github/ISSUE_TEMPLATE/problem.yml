@@ -1,0 +1,29 @@
+name: Problem report
+description: Something in AddonForge broke or behaved oddly.
+title: "Problem: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The quickest way to file this is the **Report a problem** button in AddonForge's Settings tab: it fills in the diagnostics for you. If you're here by hand, please paste them below (Settings → Copy diagnostics).
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of "Copy diagnostics" from the Settings tab. It contains your version, install folder, addon list and the last few log lines. Nothing else.
+      render: text
+    validations:
+      required: false
+  - type: input
+    id: addon
+    attributes:
+      label: Addon involved (if any)
+      placeholder: e.g. BigWigs, or the GitHub repo you tried to install

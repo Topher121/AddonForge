@@ -1,0 +1,37 @@
+name: Add an addon to the catalogue
+description: Ask for an addon to be listed, if you'd rather not open a pull request yourself.
+title: "Catalogue: "
+labels: ["catalogue"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        The catalogue is a pointer list: it says where an author publishes releases, and AddonForge downloads straight from there. We can only list addons whose author publishes on GitHub Releases, Wago, WoWInterface or TukUI. CurseForge-only addons can be listed as link-only. If you're comfortable with a pull request, see CONTRIBUTING.md instead.
+  - type: input
+    id: name
+    attributes:
+      label: Addon name
+    validations:
+      required: true
+  - type: input
+    id: source
+    attributes:
+      label: Where does the author publish it?
+      description: GitHub repo URL, Wago page, WoWInterface page or TukUI page.
+    validations:
+      required: true
+  - type: dropdown
+    id: forever
+    attributes:
+      label: Does it have a WoW Forever build?
+      options:
+        - "Yes, the author ships a Forever build (interface 16001)"
+        - "Not yet"
+        - "Not sure"
+    validations:
+      required: true
+  - type: input
+    id: folders
+    attributes:
+      label: Folder names it installs
+      description: The top-level folders inside Interface\AddOns, e.g. "BigWigs, BigWigs_Core, BigWigs_Options"

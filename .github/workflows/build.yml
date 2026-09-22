@@ -1,0 +1,25 @@
+name: Build and test
+
+on:
+  pull_request:
+    paths-ignore:
+      - "catalog/**"
+      - "**.md"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "catalog/**"
+      - "**.md"
+
+jobs:
+  test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: cargo test
+        working-directory: src-tauri
+        run: cargo test
