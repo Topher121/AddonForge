@@ -1,6 +1,6 @@
-Submit link: https://www.reddit.com/r/classicwow/submit  (choose "Text" post)
+Submit link: https://www.reddit.com/r/wowforever/submit  (choose "Text" post; r/classicwow a day later if it lands well)
 
-If a dedicated WoW Forever subreddit exists when you post, use that first and r/classicwow second.
+Check the sidebar rules first: some game subs require a "Tool" or "Addon" flair or a self-promotion disclosure (the first line already says it is your own project).
 
 =====================================================================
 TITLE (pick one)
