@@ -128,6 +128,8 @@ pub struct AddonFolder {
     /// True when any Interface number is in the Forever range.
     pub forever_interface: bool,
     pub dependencies: Vec<String>,
+    /// `## X-Part-Of: Parent` — this folder is a module of another addon.
+    pub part_of: Option<String>,
 }
 
 impl AddonFolder {
@@ -241,6 +243,11 @@ fn parse_toc(path: &Path, into: &mut AddonFolder) -> bool {
             "dependencies" | "requireddeps" => {
                 for d in val.split(',').map(|s| s.trim()).filter(|s| !s.is_empty()) {
                     into.dependencies.push(d.to_string());
+                }
+            }
+            "x-part-of" => {
+                if into.part_of.is_none() {
+                    into.part_of = Some(val.to_string());
                 }
             }
             _ => {}
