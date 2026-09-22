@@ -16,6 +16,8 @@ BODY (Reddit markdown, paste as-is)
 
 I've been playing the Forever beta and got fed up with the addon manager options, so I built my own. It's called **AddonForge** and it's free and open source.
 
+Before anyone says it: I know a lot of people want Forever to be a clean, no-addons experience, and honestly that was my plan too. But a few weeks into the beta there are a handful of small quality-of-life things I've really enjoyed having, and keeping them updated by hand got old fast. If you're going addon-free, fair play, this one isn't for you.
+
 **What it is**
 
 - A tiny Windows app (5 MB, installer or portable exe) that reads your Forever AddOns folder, groups everything properly, and checks for updates in parallel.
