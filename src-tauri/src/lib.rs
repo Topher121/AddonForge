@@ -933,12 +933,20 @@ async fn whats_new(app: State<'_, Shared>) -> Result<Option<WhatsNew>, String> {
     if current == 0 {
         return Ok(None);
     }
-    let last = app.state.lock().await.last_seen_build;
+    let (last, has_history) = {
+        let st = app.state.lock().await;
+        (st.last_seen_build, !st.installed.is_empty())
+    };
     if last == current {
         return Ok(None);
     }
+    // Existing user if: we recorded a previous build, or the self-updater
+    // launched us, or they already have addons managed by AddonForge
+    // (people on builds before this field existed). Otherwise fresh install.
+    let just_updated = std::env::var("ADDONFORGE_JUST_UPDATED").is_ok();
+    let existing = last != 0 || just_updated || has_history;
     let mut result = None;
-    if last != 0 {
+    if existing {
         let url = std::env::var("ADDONFORGE_UPDATE_URL").ok();
         let r = selfupdate::check(&app.client, url.as_deref()).await;
         if let Some(l) = r.latest {
