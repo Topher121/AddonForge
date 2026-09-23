@@ -43,6 +43,9 @@ pub struct AppState {
     /// A self-update version the user chose to skip ("v0.2.0-b7").
     #[serde(default)]
     pub skip_self_update: Option<String>,
+    /// Build number of the last version that ran, for the one-time "what's new" note.
+    #[serde(default)]
+    pub last_seen_build: u32,
 }
 
 pub fn now_secs() -> u64 {

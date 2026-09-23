@@ -10,14 +10,13 @@
 <header class="top">
   <div class="brand">
     <img src="icon.svg" alt="" class="mark">
-    <div>
-      <div class="name">AddonForge</div>
-      <div class="sub">Your addons. Ready for adventure.</div>
-    </div>
+    <span class="name">AddonForge</span>
+    <span class="sub" id="install-line">Looking for your installation…</span>
+    <button class="link small" data-navigate="settings">Change</button>
   </div>
   <nav class="tabs" aria-label="Main navigation">
-    <button class="tab active" data-tab="installed" aria-current="page">My addons</button>
-    <button class="tab" data-tab="browse">Discover</button>
+    <button class="tab active" data-tab="installed" aria-current="page">Installed</button>
+    <button class="tab" data-tab="browse">Browse</button>
     <button class="tab" data-tab="settings">Settings</button>
   </nav>
 </header>
@@ -25,123 +24,139 @@
 <div id="selfupdate" class="banner hidden">
   <span id="selfupdate-text"></span>
   <span class="grow"></span>
-  <button id="selfupdate-go" class="pill small">Update now</button>
-  <button id="selfupdate-skip" class="pill small ghost">Skip this one</button>
+  <button id="selfupdate-go" class="btn primary small">Update now</button>
+  <button id="selfupdate-skip" class="btn small">Skip this one</button>
 </div>
 
 <main>
-  <div class="install-context"><span class="game-label">WoW: Forever</span><span id="install-line">Looking for your installation…</span><button class="link" data-navigate="settings">Manage</button></div>
   <section id="tab-installed" class="panel active">
-    <div class="page-heading"><div><div class="eyebrow">YOUR COLLECTION</div><h1>My addons</h1><p>Keep your next adventure running smoothly.</p></div><button class="pill ghost" data-navigate="browse">+ Find addons</button></div>
-    <div class="stats" aria-label="Addon overview">
-      <div class="stat"><span>Installed addons</span><strong id="stat-total">0</strong></div>
-      <div class="stat"><span>Updates available</span><strong id="stat-updates">0</strong></div>
-      <div class="stat"><span>Need attention</span><strong id="stat-attention">0</strong></div>
-    </div>
     <div class="toolbar">
-      <input id="installed-filter" type="search" placeholder="Search your addons…" aria-label="Search installed addons">
-      <button id="btn-rescan" class="pill ghost" title="Read the AddOns folder again">Rescan</button>
-      <button id="btn-check" class="pill ghost">Check for updates</button>
-      <button id="btn-update-all" class="pill" disabled>Update all</button>
+      <input id="installed-filter" type="search" placeholder="Filter" aria-label="Filter installed addons">
+      <div class="filters" role="group" aria-label="Filter addons">
+        <button class="filter active" data-filter="all" aria-pressed="true">All</button>
+        <button class="filter" data-filter="updates" aria-pressed="false">Updates</button>
+        <button class="filter" data-filter="attention" aria-pressed="false">Needs attention</button>
+      </div>
+      <label class="chk"><input type="checkbox" id="show-ignored"> Show ignored</label>
+      <span class="grow"></span>
+      <button id="btn-rescan" class="btn" title="Read the AddOns folder again">Rescan</button>
+      <button id="btn-check" class="btn">Check for updates</button>
+      <button id="btn-update-all" class="btn primary" disabled>Update all</button>
     </div>
-    <div class="list-controls"><div class="filters" role="group" aria-label="Filter addons"><button class="filter active" data-filter="all" aria-pressed="true">All addons</button><button class="filter" data-filter="updates" aria-pressed="false">Updates</button><button class="filter" data-filter="attention" aria-pressed="false">Need attention</button></div><label class="chk"><input type="checkbox" id="show-ignored"> Show ignored</label></div>
-    <div id="summary" class="list-summary" role="status"></div>
+    <div class="strip">
+      <span><b id="stat-total">0</b> installed</span>
+      <span><b id="stat-updates">0</b> updates</span>
+      <span><b id="stat-attention">0</b> need attention</span>
+      <span id="summary" class="grow right" role="status"></span>
+    </div>
+    <div class="thead cols-installed" aria-hidden="true">
+      <span>Addon</span><span>Version</span><span>Source</span><span>Status</span><span></span>
+    </div>
     <div id="installed-list" class="list"></div>
   </section>
 
   <section id="tab-browse" class="panel">
-    <div class="page-heading"><div><div class="eyebrow">MAKE IT YOURS</div><h1>Discover addons</h1><p>A better setup starts with the right addons.</p></div></div>
-    <div class="card slim">
-      <h2>Have a GitHub link?</h2>
-      <div class="row">
-        <input id="gh-repo" type="text" aria-label="GitHub repository" placeholder="Paste a GitHub URL or owner/repository" spellcheck="false">
-        <button id="btn-gh-install" class="pill">Install</button>
-      </div>
-      <div class="muted small">Works for any addon whose author publishes GitHub releases, listed here or not.</div>
-    </div>
     <div class="toolbar">
-      <input id="browse-filter" type="search" aria-label="Search catalogue" placeholder="Search by name, category or author…">
-      <button id="btn-catalog-refresh" class="pill ghost">Refresh catalogue</button>
-      <span id="browse-summary" class="summary"></span>
+      <input id="browse-filter" type="search" placeholder="Filter the catalogue" aria-label="Search catalogue">
+      <span id="browse-summary" class="count"></span>
+      <span class="grow"></span>
+      <button id="btn-catalog-refresh" class="btn">Refresh catalogue</button>
+    </div>
+    <div class="toolbar sub">
+      <label for="gh-repo" class="lbl">Install from GitHub</label>
+      <input id="gh-repo" type="text" placeholder="owner/repo or a repository URL" spellcheck="false">
+      <button id="btn-gh-install" class="btn">Install</button>
+      <span class="hint">Any repo that publishes releases, listed here or not.</span>
+    </div>
+    <div class="thead cols-browse" aria-hidden="true">
+      <span>Addon</span><span>Category</span><span>Source</span><span></span>
     </div>
     <div id="browse-list" class="list"></div>
-    <p class="hint">Missing an addon? The catalogue is a public list on GitHub. Anyone can add an entry with a pull request, and AddonForge downloads straight from the author's own releases.</p>
+    <p class="hint">The catalogue is a public list on GitHub. Add an addon with a pull request and it downloads straight from the author's own releases.</p>
   </section>
 
-  <section id="tab-settings" class="panel">
-    <div class="page-heading"><div><div class="eyebrow">JUST THE WAY YOU PLAY</div><h1>Settings</h1><p>Your installation, addon sources and preferences.</p></div></div>
-    <div class="card">
-      <h2>WoW install</h2>
-      <p class="muted">The product folder AddonForge manages. Only WoW: Forever is supported for now.</p>
-      <div class="row">
-        <input id="install-path" type="text" aria-label="WoW installation folder" placeholder="C:\Program Files (x86)\World of Warcraft\_classic_beta_">
-        <button id="btn-pick" class="pill ghost">Browse…</button>
-        <button id="btn-detect" class="pill ghost">Detect</button>
-        <button id="btn-save-path" class="pill">Save</button>
+  <section id="tab-settings" class="panel prefs">
+    <div class="pref">
+      <div class="pref-label">WoW install</div>
+      <div class="pref-body">
+        <div class="row">
+          <input id="install-path" type="text" aria-label="WoW installation folder" placeholder="C:\Program Files (x86)\World of Warcraft\_classic_beta_">
+          <button id="btn-pick" class="btn">Browse…</button>
+          <button id="btn-detect" class="btn">Detect</button>
+          <button id="btn-save-path" class="btn primary">Save</button>
+        </div>
+        <div id="detected" class="detected"></div>
+        <p class="hint">The product folder AddonForge manages. Only WoW: Forever for now. <button id="btn-open-folder" class="link">Open the AddOns folder</button></p>
       </div>
-      <div id="detected" class="detected"></div>
-      <button id="btn-open-folder" class="link">Open the AddOns folder</button>
     </div>
 
-    <div class="card">
-      <h2>Updates</h2>
-      <label class="chk big"><input type="checkbox" id="pref-prerelease"> Include pre-releases and beta builds</label>
-      <p class="muted">Some addons only ship their Forever build as a GitHub pre-release or a Wago beta. Turn this on to see and install those. Uses the GitHub API for the check, which is limited to 60 requests an hour without a token.</p>
-    </div>
-
-    <div class="card">
-      <h2>Wago Addons key <span class="tag">optional</span></h2>
-      <p class="muted">Some addons only publish on Wago. Wago's API needs a key, which is free: <a href="#" data-url="" id="wago-link">get one here</a>, paste it below. It is stored on this PC and only ever sent to addons.wago.io.</p>
-      <div class="row">
-        <input id="wago-key" type="password" aria-label="Wago API key" placeholder="Paste your Wago API key">
-        <button id="btn-save-key" class="pill">Save key</button>
-        <button id="btn-clear-key" class="pill ghost">Clear</button>
+    <div class="pref">
+      <div class="pref-label">Updates</div>
+      <div class="pref-body">
+        <label class="chk big"><input type="checkbox" id="pref-prerelease"> Include pre-releases and beta builds</label>
+        <p class="hint">For authors who only ship their Forever build as a GitHub pre-release or a Wago beta. Uses the GitHub API for the check, limited to 60 requests an hour without a token.</p>
+        <button id="btn-selfcheck" class="link">Check for an AddonForge update now</button>
       </div>
-      <div id="wago-status" class="muted"></div>
     </div>
 
-    <div class="card">
-      <h2>Your addon list</h2>
-      <p class="muted">Export the list of what you have installed (names and sources, no settings) to share with a friend or move to another PC. Import one to install everything on it.</p>
-      <div class="row">
-        <button id="btn-export" class="pill ghost">Export list…</button>
-        <button id="btn-import" class="pill ghost">Import list…</button>
+    <div class="pref">
+      <div class="pref-label">Wago key <span class="opt">optional</span></div>
+      <div class="pref-body">
+        <div class="row">
+          <input id="wago-key" type="password" aria-label="Wago API key" placeholder="Paste your Wago API key">
+          <button id="btn-save-key" class="btn primary">Save</button>
+          <button id="btn-clear-key" class="btn">Clear</button>
+        </div>
+        <p class="hint">Some addons only publish on Wago. Their API needs a key, free from <a href="#" data-url="" id="wago-link">addons.wago.io</a>. Stored on this PC, only ever sent to addons.wago.io. <span id="wago-status"></span></p>
       </div>
-      <div id="import-plan" class="hidden"></div>
     </div>
 
-    <div class="card">
-      <h2>Report a problem</h2>
-      <p class="muted">Something broke? This builds a report with your version, install folder, addon list and the last few log lines. Nothing is sent until you press send in your browser or email app, and you can read it all first.</p>
-      <div class="row">
-        <button id="btn-report-gh" class="pill">Report on GitHub</button>
-        <button id="btn-report-mail" class="pill ghost">Email the dev</button>
-        <button id="btn-copy-diag" class="pill ghost">Copy diagnostics</button>
-        <button id="btn-open-log" class="link">Open the log file</button>
+    <div class="pref">
+      <div class="pref-label">Addon list</div>
+      <div class="pref-body">
+        <div class="row">
+          <button id="btn-export" class="btn">Export…</button>
+          <button id="btn-import" class="btn">Import…</button>
+        </div>
+        <p class="hint">Names and sources only, no settings. Import one to install everything on it.</p>
+        <div id="import-plan" class="hidden"></div>
       </div>
-      <pre id="diag" class="diag hidden"></pre>
     </div>
 
-    <div class="card">
-      <h2>About</h2>
-      <p class="muted">AddonForge <span id="version"></span> by Pocket Forge Studios. No accounts, no ads, no analytics. The app talks only to the addon sites themselves (GitHub, Wago, WoWInterface, TukUI) and to GitHub once at launch to see if AddonForge itself has an update.</p>
-      <p class="muted">Catalogue: <span id="catalog-info">…</span></p>
-      <p class="muted">Settings file: <code id="state-file"></code></p>
-      <p class="muted"><a href="#" data-url="https://github.com/Topher121/AddonForge">Source code &amp; catalogue on GitHub</a> · <a href="#" data-url="https://ko-fi.com/pocketforgestudios">Support the dev</a> · <a href="#" data-url="mailto:PocketForgeStudios@proton.me">PocketForgeStudios@proton.me</a></p>
-      <button id="btn-selfcheck" class="link">Check for an AddonForge update now</button>
-      <p class="muted small">Independent project. Not affiliated with CurseForge, Overwolf, Blizzard Entertainment, Wago, WoWInterface or TukUI. World of Warcraft is a trademark of Blizzard Entertainment.</p>
+    <div class="pref">
+      <div class="pref-label">Report a problem</div>
+      <div class="pref-body">
+        <div class="row">
+          <button id="btn-report-gh" class="btn primary">Report on GitHub</button>
+          <button id="btn-report-mail" class="btn">Email</button>
+          <button id="btn-copy-diag" class="btn">Copy diagnostics</button>
+          <button id="btn-open-log" class="link">Open the log file</button>
+        </div>
+        <p class="hint">Builds a report with your version, install folder, addon list and the last few log lines. Nothing is sent until you press send, and you can read it first.</p>
+        <pre id="diag" class="diag hidden"></pre>
+      </div>
+    </div>
+
+    <div class="pref">
+      <div class="pref-label">About</div>
+      <div class="pref-body about">
+        <p>AddonForge <span id="version"></span> by Pocket Forge Studios.</p>
+        <p class="hint">No accounts, no ads, no analytics. Talks only to the addon sites (GitHub, Wago, WoWInterface, TukUI), plus one request to GitHub at launch to see if AddonForge itself has an update.</p>
+        <p class="hint">Catalogue: <span id="catalog-info">…</span><br>Settings file: <code id="state-file"></code></p>
+        <p class="hint"><a href="#" data-url="https://github.com/Topher121/AddonForge">Source code and catalogue</a> · <a href="#" data-url="https://ko-fi.com/pocketforgestudios">Support the dev</a> · <a href="#" data-url="mailto:PocketForgeStudios@proton.me">PocketForgeStudios@proton.me</a></p>
+        <p class="hint">Independent project. Not affiliated with CurseForge, Overwolf, Blizzard Entertainment, Wago, WoWInterface or TukUI. World of Warcraft is a trademark of Blizzard Entertainment.</p>
+      </div>
     </div>
   </section>
 </main>
 
-<footer class="app-footer"><span><span class="privacy-dot"></span> No accounts. No ads. Just addons.</span><span>Pocket Forge Studios</span></footer>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-text">
   <div class="modal-card">
     <div id="modal-text"></div>
     <div class="row right">
-      <button id="modal-no" class="pill ghost">Cancel</button>
-      <button id="modal-yes" class="pill">Continue</button>
+      <button id="modal-no" class="btn">Cancel</button>
+      <button id="modal-yes" class="btn primary">Continue</button>
     </div>
   </div>
 </div>
