@@ -446,6 +446,8 @@ struct Settings {
     wago_key_url: String,
     repo_url: String,
     support_email: String,
+    /// `ADDONFORGE_TAB=browse|settings` opens on that tab (screenshots, testing).
+    start_tab: Option<String>,
 }
 
 #[tauri::command]
@@ -469,6 +471,7 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         wago_key_url: sources::wago::KEY_URL.into(),
         repo_url: REPO_URL.into(),
         support_email: SUPPORT_EMAIL.into(),
+        start_tab: std::env::var("ADDONFORGE_TAB").ok().filter(|t| !t.is_empty()),
     })
 }
 
@@ -915,6 +918,41 @@ async fn apply_self_update(app: State<'_, Shared>, handle: tauri::AppHandle) -> 
     Ok(new_exe.to_string_lossy().to_string())
 }
 
+/// First launch of a newer build: return that build's release notes once.
+/// Never on a fresh install (nothing to compare with), never for dev builds.
+#[derive(Serialize)]
+struct WhatsNew {
+    version: String,
+    build: u32,
+    notes: String,
+}
+
+#[tauri::command]
+async fn whats_new(app: State<'_, Shared>) -> Result<Option<WhatsNew>, String> {
+    let current = selfupdate::build();
+    if current == 0 {
+        return Ok(None);
+    }
+    let last = app.state.lock().await.last_seen_build;
+    if last == current {
+        return Ok(None);
+    }
+    let mut result = None;
+    if last != 0 {
+        let url = std::env::var("ADDONFORGE_UPDATE_URL").ok();
+        let r = selfupdate::check(&app.client, url.as_deref()).await;
+        if let Some(l) = r.latest {
+            if l.build == current && !l.notes.trim().is_empty() {
+                result = Some(WhatsNew { version: l.version, build: l.build, notes: l.notes });
+            }
+        }
+    }
+    let mut st = app.state.lock().await;
+    st.last_seen_build = current;
+    st.save().map_err(err)?;
+    Ok(result)
+}
+
 // ---------------------------------------------------------------- diagnostics
 
 #[tauri::command]
@@ -1191,6 +1229,7 @@ pub fn run() {
             check_self_update,
             skip_self_update,
             apply_self_update,
+            whats_new,
             diagnostics,
         ])
         .run(tauri::generate_context!())

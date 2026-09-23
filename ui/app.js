@@ -53,7 +53,7 @@ function confirmModal(html, yes = "Continue") {
 
 function setBusy(b) {
   busy = b;
-  document.querySelectorAll(".pill").forEach((el) => {
+  document.querySelectorAll(".btn").forEach((el) => {
     if (el.id === "modal-yes" || el.id === "modal-no") return;
     el.disabled = b || (el.id === "btn-update-all" && !packages.some((p) => p.status === "update" && !p.pinned && !p.ignored));
   });
@@ -132,7 +132,7 @@ function renderInstalled() {
   const eligible = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored).length;
   $("btn-update-all").textContent = eligible ? `Update all (${eligible})` : "Update all";
   if (!packages.length) {
-    list.innerHTML = `<div class="empty"><strong>Your adventure starts here</strong>No addons found in this installation yet.<br><button class="pill" data-navigate="browse">Discover addons</button></div>`;
+    list.innerHTML = `<div class="empty"><strong>No addons found</strong>Nothing in this installation's AddOns folder yet.<br><button class="btn" data-navigate="browse">Discover addons</button></div>`;
     $("summary").textContent = "";
     setBusy(busy);
     return;
@@ -140,33 +140,36 @@ function renderInstalled() {
   list.innerHTML = rows.length
     ? rows
         .map((p) => {
-          const ver = p.installed_version ? `<b>${esc(p.installed_version)}</b>` : "<i>version unknown</i>";
-          const remote = p.remote_version && p.status === "update" ? ` → <b>${esc(p.remote_version)}</b>${p.remote_prerelease ? ' <span class="badge pre">pre-release</span>' : ""}` : "";
-          const fv = p.supports_forever
-            ? `<span class="badge forever">Forever</span>`
-            : `<span class="badge not-forever" title="No 16001 interface or _Forever toc found">Not for Forever</span>`;
+          const ver = p.installed_version ? `<b>${esc(p.installed_version)}</b>` : `<span class="muted">unknown</span>`;
+          const remote = p.remote_version && p.status === "update" ? `<span class="arrow">→</span><b>${esc(p.remote_version)}</b>${p.remote_prerelease ? ' <span class="badge pre">pre</span>' : ""}` : "";
+          const flags = [
+            p.supports_forever ? "" : `<span class="badge not-forever" title="No 16001 interface or _Forever toc found">not for Forever</span>`,
+            p.pinned ? `<span class="badge pinned" title="Updates held back">pinned</span>` : "",
+            p.ignored ? `<span class="badge managed">ignored</span>` : "",
+          ].filter(Boolean).join(" ");
           const src = p.source_url
             ? `<a href="#" data-url="${esc(p.source_url)}">${esc(p.source_label || (p.curse_id ? "CurseForge" : "link"))}</a>`
-            : `<span>${esc(p.source_label)}</span>`;
+            : `<span class="muted">${esc(p.source_label || "—")}</span>`;
           const canUpdate = p.source && p.status !== "no-key";
-          const btnLabel = p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install via source";
+          const btnLabel = p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
           const noteCls = p.status === "error" ? "note err" : "note";
           const deps = p.missing_deps.length
             ? `<div class="note warn">Needs: ${p.missing_deps
                 .map((d) => (d.catalog_id ? `<b>${esc(d.name || d.folder)}</b> <button class="mini" data-act="dep" data-id="${esc(d.catalog_id)}">install</button>` : `<b>${esc(d.folder)}</b> <i>(not in catalogue)</i>`))
                 .join(", ")}</div>`
             : "";
+          const sub = p.author ? esc(p.author) : "";
           return `<div class="item ${p.ignored ? "ignored" : ""} ${p.status === "no-source" || p.status === "curse-only" ? "dim" : ""}" data-key="${esc(p.key)}">
-        <div>
-          <div class="title">${esc(p.name)} ${badge(p)} ${fv} ${p.pinned ? '<span class="badge pinned" title="Updates held back">pinned</span>' : ""} ${p.ignored ? '<span class="badge managed">ignored</span>' : ""} ${p.managed ? '<span class="badge managed" title="Installed by AddonForge">managed</span>' : ""}</div>
-          <div class="meta">${ver}${remote} · ${src}${p.author ? " · " + esc(p.author) : ""} · <span title="${esc(p.folders.join(", "))}">${p.folders.length} folder${p.folders.length === 1 ? "" : "s"}</span></div>
-        </div>
-        <div class="actions">
-          ${canUpdate ? `<button class="pill small ${p.status === "update" && !p.pinned ? "" : "ghost"}" data-act="update">${btnLabel}</button>` : ""}
+        <div class="c-name"><span class="nm">${esc(p.name)}</span>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div>
+        <div class="c-ver">${ver}${remote}</div>
+        <div class="c-src">${src}</div>
+        <div class="c-status">${badge(p)}</div>
+        <div class="c-act">
+          ${canUpdate ? `<button class="btn small ${p.status === "update" && !p.pinned ? "primary" : ""}" data-act="update">${btnLabel}</button>` : ""}
           <details class="more-actions"><summary aria-label="Options for ${esc(p.name)}" title="Addon options">···</summary><div class="action-menu">
-          <button class="pill small ghost" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Allow updates" : "Pin version"}</button>
-          <button class="pill small ghost" data-act="ignore" title="${p.ignored ? "Show it again" : "Hide from this list and skip checks"}">${p.ignored ? "Unignore" : "Ignore"}</button>
-          <button class="pill small ghost" data-act="remove" title="Delete these folders from AddOns (saved settings in WTF are kept)">Remove</button>
+          <button class="btn small" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Allow updates" : "Pin version"}</button>
+          <button class="btn small" data-act="ignore" title="${p.ignored ? "Show it again" : "Hide it from the list and stop checking it, e.g. your own addons or ones with no update source"}">${p.ignored ? "Unignore" : "Ignore"}</button>
+          <button class="btn small" data-act="remove" title="Delete these folders from AddOns (saved settings in WTF are kept)">Remove</button>
           </div></details>
         </div>
         ${p.note ? `<div class="${noteCls}">${esc(p.note)}</div>` : ""}
@@ -174,7 +177,7 @@ function renderInstalled() {
       </div>`;
         })
         .join("")
-    : `<div class="empty"><strong>No addons in this view</strong>Try another filter or clear your search.<br><button class="pill ghost" data-reset-filters>Show all addons</button></div>`;
+    : `<div class="empty"><strong>Nothing in this view</strong>Try another filter or clear the search.<br><button class="btn" data-reset-filters>Show all addons</button></div>`;
   const updates = packages.filter((p) => p.status === "update" && !p.ignored).length;
   const errors = packages.filter((p) => p.status === "error" && !p.ignored).length;
   const ignored = packages.filter((p) => p.ignored).length;
@@ -320,7 +323,7 @@ async function rescan(keepStatus = false) {
   } catch (err) {
     packages = [];
     renderInstalled();
-    $("installed-list").innerHTML = `<div class="empty"><strong>Let's find your addons</strong>${esc(String(err))}<br><button class="pill" data-navigate="settings">Choose WoW folder</button></div>`;
+    $("installed-list").innerHTML = `<div class="empty"><strong>No install selected</strong>${esc(String(err))}<br><button class="btn primary" data-navigate="settings">Choose WoW folder</button></div>`;
   } finally {
     setBusy(false);
   }
@@ -369,12 +372,11 @@ function renderCatalog() {
           const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
           const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
           return `<div class="item" data-id="${esc(e.id)}">
-            <div>
-              <div class="title">${esc(e.name)} ${fv} ${e.installed ? '<span class="badge ok">Installed</span>' : ""}</div>
-              <div class="meta">${esc(e.desc || "")}${e.category ? ` · ${esc(e.category)}` : ""} · <a href="#" data-url="${esc(e.url || (e.github ? "https://github.com/" + e.github : "#"))}">${esc(src)}</a></div>
-            </div>
-            <div class="actions">
-              ${canInstall ? `<button class="pill small ${e.installed ? "ghost" : ""}" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">Needs Wago key</span>` : `<span class="badge curse-only">Link only</span>`}
+            <div class="c-name"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div>
+            <div class="c-cat muted">${esc(e.category || "")}</div>
+            <div class="c-src"><a href="#" data-url="${esc(e.url || (e.github ? "https://github.com/" + e.github : "#"))}">${esc(src)}</a></div>
+            <div class="c-act">
+              ${canInstall ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">needs Wago key</span>` : `<span class="badge curse-only">link only</span>`}
             </div>
           </div>`;
         })
@@ -496,7 +498,7 @@ async function detect() {
       return;
     }
     $("detected").innerHTML = found
-      .map((i) => `<button class="pill ghost ${i.flavor}" data-path="${esc(i.path)}" ${i.flavor !== "forever" ? 'title="Not supported yet: only WoW: Forever for now"' : ""}>${esc(i.label)} <code>${esc(i.path)}</code></button>`)
+      .map((i) => `<button class="btn ${i.flavor}" data-path="${esc(i.path)}" ${i.flavor !== "forever" ? 'title="Not supported yet: only WoW: Forever for now"' : ""}>${esc(i.label)} <code>${esc(i.path)}</code></button>`)
       .join("");
     await loadSettings();
     if (settings.install_path) rescan();
@@ -599,7 +601,7 @@ function renderImportPlan(plan) {
       .map((r) => `<li class="${r.installed ? "have" : r.installable ? "todo" : "skip"}">${esc(r.name)} <span class="muted">${r.installed ? "installed" : r.installable ? r.source.kind + " · " + r.source.id : r.why}</span></li>`)
       .join("") +
     `</ul>` +
-    (todo.length ? `<button id="btn-import-go" class="pill">Install ${todo.length} missing</button>` : "");
+    (todo.length ? `<button id="btn-import-go" class="btn primary">Install ${todo.length} missing</button>` : "");
   const go = $("btn-import-go");
   if (go)
     go.onclick = async () => {
@@ -673,7 +675,7 @@ async function checkSelf(manual = false) {
   }
   if (selfUpdate.available && selfUpdate.latest) {
     const l = selfUpdate.latest;
-    $("selfupdate-text").innerHTML = `AddonForge <b>v${esc(l.version)}</b> build ${esc(l.build)} is out${l.notes ? ": " + esc(l.notes) : ""}`;
+    $("selfupdate-text").innerHTML = `A new version of AddonForge is available (<b>v${esc(l.version)}</b> build ${esc(l.build)}). Please update to the latest.`;
     $("selfupdate").classList.remove("hidden");
   } else {
     $("selfupdate").classList.add("hidden");
@@ -714,4 +716,14 @@ $("selfupdate-go").onclick = async () => {
   }
   loadCatalog(false);
   checkSelf(false);
+  if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();
+  // One-time note on the first launch after an update.
+  invoke("whats_new")
+    .then((w) => {
+      if (!w) return;
+      $("modal-no").classList.add("hidden");
+      confirmModal(`<p><b>AddonForge v${esc(w.version)} build ${esc(w.build)}</b> is installed. What changed:</p><div class="whatsnew">${esc(w.notes)}</div>`, "OK")
+        .finally(() => $("modal-no").classList.remove("hidden"));
+    })
+    .catch(() => {});
 })();

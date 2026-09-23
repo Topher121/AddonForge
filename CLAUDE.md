@@ -75,14 +75,27 @@ very little memory and has no privacy issues. Decisions locked that day:
 - `src-tauri/src/lib.rs` — Tauri commands; groups folders into packages
   (catalogue match by folder name / ids, then by Wago/WoWI/Curse id, else
   standalone) and picks the source (github > wago-with-key > wowi > tukui).
-- `ui/app.js` — three tabs: **My addons** (stats row, search, All /
-  Updates / Need attention filters, per-row actions in a "..." menu),
-  **Discover** (GitHub-link install box + catalogue), **Settings** (install
-  folder, pre-releases, Wago key, export/import, report a problem, about).
-  Redesigned 2026-09-22 by a second session (green accent theme, footer
-  "No accounts. No ads. Just addons."); `node scripts/test-ui.js` runs its
-  DOM-free behaviour checks (counts, filters, search, escaping, modal).
-  Keep both `cargo test` and that script green.
+- `ui/app.js` — three tabs: **Installed** (filter, All / Updates / Needs
+  attention, show-ignored, a one-line count strip, then a TABLE: Addon /
+  Version / Source / Status / actions with a "···" row menu for pin,
+  ignore, remove), **Browse** (install-from-GitHub row + catalogue table),
+  **Settings** (label-column preferences pane, no cards).
+  Redesigned AGAIN 2026-09-23 (owner: make it look "non-AI"): no taglines,
+  eyebrows, stat cards, pill badges or footer slogan; dense rows with
+  hairlines; status = coloured dot + word; ONE ember accent (`--accent`,
+  from the icon) for the active tab, the single primary button per screen
+  and "update available"; columns use fixed px widths so rows align with
+  the header. Element ids are unchanged so `node scripts/test-ui.js`
+  (DOM-free behaviour checks) still passes; keep it and `cargo test` green.
+  `ADDONFORGE_TAB=browse|settings` env opens the app on that tab
+  (screenshots). No "managed" tag or folder counts in rows (owner: users
+  don't care); the Remove dialog still lists the folders.
+- **What's new popup**: `whats_new` command + `state.last_seen_build`.
+  First launch of a newer build fetches latest.json and, if its build ==
+  the running build, shows the release note once. Never on a fresh
+  install, never for dev builds (build 0). The self-update banner says
+  "A new version of AddonForge is available … Please update to the
+  latest" and the notes are shown after the update instead.
 
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
