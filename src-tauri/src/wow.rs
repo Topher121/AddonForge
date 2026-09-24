@@ -130,6 +130,8 @@ pub struct AddonFolder {
     pub dependencies: Vec<String>,
     /// `## X-Part-Of: Parent` — this folder is a module of another addon.
     pub part_of: Option<String>,
+    /// `## IconTexture:` — a file path under Interface\AddOns\ or a game-internal icon name.
+    pub icon_texture: Option<String>,
 }
 
 impl AddonFolder {
@@ -248,6 +250,11 @@ fn parse_toc(path: &Path, into: &mut AddonFolder) -> bool {
             "x-part-of" => {
                 if into.part_of.is_none() {
                     into.part_of = Some(val.to_string());
+                }
+            }
+            "icontexture" => {
+                if into.icon_texture.is_none() {
+                    into.icon_texture = Some(val.to_string());
                 }
             }
             _ => {}

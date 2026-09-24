@@ -1,6 +1,7 @@
 //! AddonForge core: Tauri commands the UI calls over IPC.
 
 mod catalog;
+mod icons;
 mod install;
 pub mod log;
 mod selfupdate;
@@ -8,7 +9,7 @@ mod sources;
 mod state;
 mod wow;
 
-use catalog::{Catalog, CatalogEntry};
+use catalog::{Catalog, CatalogEntry, Stats};
 use serde::{Deserialize, Serialize};
 use sources::{normalize_version, ResolveOpts, Source};
 use state::{AppState, Installed};
@@ -31,6 +32,9 @@ struct App {
     client: reqwest::Client,
     state: Mutex<AppState>,
     catalog: Mutex<Option<(Catalog, &'static str)>>,
+    stats: Mutex<Option<Stats>>,
+    /// icon key -> data URL, for this run (disk cache underneath).
+    icon_cache: Mutex<HashMap<String, Option<String>>>,
 }
 
 type Shared = Arc<App>;
@@ -67,6 +71,8 @@ pub struct Package {
     pub pinned: bool,
     pub ignored: bool,
     pub missing_deps: Vec<MissingDep>,
+    /// `## IconTexture` of the first folder that has one (resolved lazily by `package_icons`).
+    pub icon_texture: Option<String>,
     pub remote_version: Option<String>,
     pub remote_forever: Option<bool>,
     pub remote_prerelease: bool,
@@ -333,6 +339,9 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             supports_forever,
             managed: managed.is_some(),
             missing_deps: missing,
+            icon_texture: std::iter::once(primary)
+                .chain(fs.iter().copied())
+                .find_map(|f| f.icon_texture.clone()),
             remote_version: None,
             remote_forever: None,
             remote_prerelease: false,
@@ -353,6 +362,26 @@ async fn catalog_cached(app: &App) -> Catalog {
         *guard = Some(loaded);
     }
     guard.as_ref().unwrap().0.clone()
+}
+
+async fn stats_cached(app: &App) -> Stats {
+    let mut guard = app.stats.lock().await;
+    if guard.is_none() {
+        let s = catalog::load_stats(&app.client).await;
+        logi!("stats loaded: {} entries ({})", s.entries.len(), if s.updated.is_empty() { "none" } else { s.updated.as_str() });
+        *guard = Some(s);
+    }
+    guard.as_ref().unwrap().clone()
+}
+
+/// Icon for one thing, via the run cache: `local:<install>|<texture>` or `url:<https>`.
+async fn icon_cached(app: &App, cache_key: String, produce: impl std::future::Future<Output = Option<String>>) -> Option<String> {
+    if let Some(v) = app.icon_cache.lock().await.get(&cache_key) {
+        return v.clone();
+    }
+    let v = produce.await;
+    app.icon_cache.lock().await.insert(cache_key, v.clone());
+    v
 }
 
 fn entry_hint(cat: &Catalog, pkg: &Package) -> (Option<String>, Option<bool>) {
@@ -667,14 +696,19 @@ struct CatalogRow {
     entry: CatalogEntry,
     installed: bool,
     key: String,
+    downloads: Option<u64>,
+    updated_at: Option<String>,
+    stat_source: Option<String>,
 }
 
 #[tauri::command]
 async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<Vec<CatalogRow>, String> {
     if refresh.unwrap_or(false) {
         *app.catalog.lock().await = None;
+        *app.stats.lock().await = None;
     }
     let cat = catalog_cached(&app).await;
+    let stats = stats_cached(&app).await;
     let installed_keys: Vec<String> = match scan_packages(&app).await {
         Ok(p) => p.into_iter().map(|p| p.key).collect(),
         Err(_) => Vec::new(),
@@ -684,9 +718,136 @@ async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<V
         .into_iter()
         .map(|e| {
             let key = format!("cat:{}", e.id);
-            CatalogRow { installed: installed_keys.contains(&key), key, entry: e }
+            let st = stats.entries.get(&e.id);
+            CatalogRow {
+                installed: installed_keys.contains(&key),
+                key,
+                downloads: st.and_then(|s| s.downloads),
+                updated_at: st.and_then(|s| s.updated_at.clone()),
+                stat_source: st.map(|s| s.source.clone()).filter(|s| !s.is_empty()),
+                entry: e,
+            }
         })
         .collect())
+}
+
+#[derive(Serialize, Clone)]
+struct BundleAddon {
+    id: String,
+    name: String,
+    desc: String,
+    installable: bool,
+    needs_key: bool,
+    installed: bool,
+    forever: Option<bool>,
+}
+
+#[derive(Serialize, Clone)]
+struct BundleView {
+    id: String,
+    name: String,
+    desc: String,
+    note: String,
+    addons: Vec<BundleAddon>,
+}
+
+#[tauri::command]
+async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
+    let cat = catalog_cached(&app).await;
+    let has_wago = app.state.lock().await.has_wago_key();
+    let installed_keys: Vec<String> = match scan_packages(&app).await {
+        Ok(p) => p.into_iter().map(|p| p.key).collect(),
+        Err(_) => Vec::new(),
+    };
+    Ok(cat
+        .bundles
+        .iter()
+        .map(|b| BundleView {
+            id: b.id.clone(),
+            name: b.name.clone(),
+            desc: b.desc.clone(),
+            note: b.note.clone(),
+            addons: b
+                .addons
+                .iter()
+                .filter_map(|id| cat.addons.iter().find(|e| &e.id == id))
+                .map(|e| {
+                    let direct = e.github.is_some() || e.wowi.is_some() || e.tukui.is_some();
+                    BundleAddon {
+                        id: e.id.clone(),
+                        name: e.name.clone(),
+                        desc: e.desc.clone(),
+                        installable: direct || (e.wago.is_some() && has_wago),
+                        needs_key: !direct && e.wago.is_some() && !has_wago,
+                        installed: installed_keys.contains(&format!("cat:{}", e.id)),
+                        forever: e.forever,
+                    }
+                })
+                .collect(),
+        })
+        .collect())
+}
+
+/// Icons for installed packages: own icon file, else GitHub avatar, else none.
+#[tauri::command]
+async fn package_icons(app: State<'_, Shared>, keys: Vec<String>) -> Result<HashMap<String, String>, String> {
+    let install = current_install(&app).await?;
+    let pkgs = scan_packages(&app).await?;
+    let mut out = HashMap::new();
+    for p in pkgs.into_iter().filter(|p| keys.contains(&p.key)) {
+        let mut icon = None;
+        if let Some(tex) = &p.icon_texture {
+            let (inst, tex2) = (install.clone(), tex.clone());
+            icon = icon_cached(&app, format!("local:{inst}|{tex2}"), async move {
+                tokio::task::spawn_blocking(move || icons::local_icon(Path::new(&inst), &tex2)).await.ok().flatten()
+            })
+            .await;
+        }
+        if icon.is_none() {
+            if let Some(Source::Github(repo)) = &p.source {
+                if let Some(url) = icons::github_avatar_url(repo) {
+                    let (c, u) = (app.client.clone(), url.clone());
+                    icon = icon_cached(&app, format!("url:{url}"), async move { icons::remote_icon(&c, &u).await }).await;
+                }
+            }
+        }
+        if let Some(i) = icon {
+            out.insert(p.key, i);
+        }
+    }
+    Ok(out)
+}
+
+/// Icons for catalogue entries: explicit `icon` URL, else GitHub avatar.
+#[tauri::command]
+async fn catalog_icons(app: State<'_, Shared>, ids: Vec<String>) -> Result<HashMap<String, String>, String> {
+    let cat = catalog_cached(&app).await;
+    let mut out = HashMap::new();
+    for e in cat.addons.iter().filter(|e| ids.contains(&e.id)) {
+        let url = e
+            .icon
+            .clone()
+            .or_else(|| e.github.as_deref().and_then(icons::github_avatar_url));
+        let Some(url) = url else { continue };
+        let (c, u) = (app.client.clone(), url.clone());
+        if let Some(i) = icon_cached(&app, format!("url:{url}"), async move { icons::remote_icon(&c, &u).await }).await {
+            out.insert(e.id.clone(), i);
+        }
+    }
+    Ok(out)
+}
+
+/// Longer description + preview image for the details window. GitHub only
+/// for now (README excerpt and its first screenshot); other sources return
+/// nothing and the UI shows the catalogue description and a link.
+#[tauri::command]
+async fn addon_details(app: State<'_, Shared>, id: String) -> Result<icons::Details, String> {
+    let cat = catalog_cached(&app).await;
+    let Some(e) = cat.addons.iter().find(|e| e.id == id) else { return Ok(icons::Details::default()) };
+    match &e.github {
+        Some(repo) => Ok(icons::github_details(&app.client, repo).await),
+        None => Ok(icons::Details::default()),
+    }
 }
 
 #[tauri::command]
@@ -1016,6 +1177,8 @@ fn make_app() -> Shared {
         client,
         state: Mutex::new(st),
         catalog: Mutex::new(None),
+        stats: Mutex::new(None),
+        icon_cache: Mutex::new(HashMap::new()),
     })
 }
 
@@ -1226,6 +1389,10 @@ pub fn run() {
             check_updates,
             update_package,
             catalog_list,
+            bundles,
+            package_icons,
+            catalog_icons,
+            addon_details,
             install_catalog,
             install_source,
             install_github,

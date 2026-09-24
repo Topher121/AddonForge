@@ -49,6 +49,24 @@ pub struct CatalogEntry {
     /// Does the author publish a Forever build?  true / false / null=unknown.
     #[serde(default)]
     pub forever: Option<bool>,
+    /// Optional https icon for the Browse list (else the GitHub avatar is used).
+    #[serde(default)]
+    pub icon: Option<String>,
+}
+
+/// A hand-picked set of addons shown as "Starter picks" in Browse.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Bundle {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub desc: String,
+    /// Catalogue ids, in display order.
+    #[serde(default)]
+    pub addons: Vec<String>,
+    /// Short plain-English note shown under the bundle (e.g. "pick one boss mod").
+    #[serde(default)]
+    pub note: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -59,6 +77,53 @@ pub struct Catalog {
     pub updated: String,
     #[serde(default)]
     pub addons: Vec<CatalogEntry>,
+    #[serde(default)]
+    pub bundles: Vec<Bundle>,
+}
+
+/// Popularity feed written daily by a GitHub Action (`catalog/stats.json`):
+/// release download totals and last-release dates, so the app never has to
+/// hit the GitHub API itself.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct StatEntry {
+    #[serde(default)]
+    pub downloads: Option<u64>,
+    #[serde(default)]
+    pub updated_at: Option<String>,
+    /// "github" | "wowi": what the number counts.
+    #[serde(default)]
+    pub source: String,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct Stats {
+    #[serde(default)]
+    pub updated: String,
+    #[serde(default)]
+    pub entries: std::collections::HashMap<String, StatEntry>,
+}
+
+/// Copy shipped with the build, used when GitHub is unreachable (or before the first daily refresh).
+pub const BUNDLED_STATS: &str = include_str!("../../catalog/stats.json");
+pub const STATS_URL: &str =
+    "https://raw.githubusercontent.com/Topher121/AddonForge/main/catalog/stats.json";
+
+pub async fn load_stats(client: &reqwest::Client) -> Stats {
+    let r = async {
+        client
+            .get(STATS_URL)
+            .timeout(Duration::from_secs(6))
+            .send()
+            .await
+            .ok()?
+            .error_for_status()
+            .ok()?
+            .json::<Stats>()
+            .await
+            .ok()
+    }
+    .await;
+    r.unwrap_or_else(|| serde_json::from_str(BUNDLED_STATS).unwrap_or_default())
 }
 
 pub fn bundled() -> Catalog {
@@ -79,8 +144,13 @@ pub async fn load(client: &reqwest::Client) -> (Catalog, &'static str) {
         r.json::<Catalog>().await.ok()
     }
     .await;
+    // A build can ship with a catalogue newer than what is on GitHub for a
+    // little while (or the remote copy could be rolled back); take the newer
+    // of the two by their `updated` date, remote on a tie.
+    let local = bundled();
     match remote {
-        Some(c) if !c.addons.is_empty() => (c, "remote"),
-        _ => (bundled(), "bundled"),
+        Some(c) if !c.addons.is_empty() && c.updated >= local.updated => (c, "remote"),
+        Some(_) => (local, "bundled (newer)"),
+        None => (local, "bundled"),
     }
 }
