@@ -182,14 +182,14 @@ function renderInstalled() {
     ? rows
         .map((p) => {
           const ver = p.installed_version ? `<b>${esc(p.installed_version)}</b>` : `<span class="muted">unknown</span>`;
-          const remote = p.remote_version && p.status === "update" ? `<span class="arrow">→</span><b>${esc(p.remote_version)}</b>${p.remote_prerelease ? ' <span class="badge pre">pre</span>' : ""}` : "";
+          const remote = p.remote_version ? `${esc(p.remote_version)}${p.remote_prerelease ? ' <span class="badge pre">beta</span>' : ""}` : "—";
           const flags = [
             p.supports_forever ? "" : `<span class="badge not-forever" title="No 16001 interface or _Forever toc found">not for Forever</span>`,
             p.pinned ? `<span class="badge pinned" title="Updates held back">pinned</span>` : "",
             p.ignored ? `<span class="badge managed">ignored</span>` : "",
           ].filter(Boolean).join(" ");
           const src = p.source_url
-            ? `<a href="#" data-url="${esc(p.source_url)}">${esc(p.source_label || (p.curse_id ? "CurseForge" : "link"))}</a>`
+            ? `<a href="#" data-url="${esc(p.source_url)}">${esc((p.source_label || (p.curse_id ? "CurseForge" : "link")).split(" · ")[0])}</a>`
             : `<span class="muted">${esc(p.source_label || "—")}</span>`;
           const canUpdate = p.source && p.status !== "no-key";
           const btnLabel = p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
@@ -199,15 +199,18 @@ function renderInstalled() {
                 .map((d) => (d.catalog_id ? `<b>${esc(d.name || d.folder)}</b> <button class="mini" data-act="dep" data-id="${esc(d.catalog_id)}">install</button>` : `<b>${esc(d.folder)}</b> <i>(not in catalogue)</i>`))
                 .join(", ")}</div>`
             : "";
-          const sub = p.author ? esc(p.author) : "";
+          const entry = catalog.find((c) => c.id === p.catalog_id);
+          const sub = esc(entry?.category || p.author || `${p.folders.length} folder${p.folders.length === 1 ? "" : "s"}`);
           return `<div class="item ${p.ignored ? "ignored" : ""} ${p.status === "no-source" || p.status === "curse-only" ? "dim" : ""}" data-key="${esc(p.key)}">
-        <div class="c-name">${iconTile("p", p.key, p.name)}<div class="nm-wrap"><span class="nm">${esc(p.name)}</span>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div></div>
-        <div class="c-ver">${ver}${remote}</div>
+        <div class="c-name">${iconTile("p", p.key, p.name)}<div class="nm-wrap"><button class="nm addon-detail" data-package-detail="${esc(p.key)}" aria-haspopup="dialog" title="View addon details">${esc(p.name)}</button>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div></div>
+        <div class="c-ver" title="Installed version">${ver}</div>
+        <div class="c-ver available" title="Available version">${remote}</div>
         <div class="c-src">${src}</div>
         <div class="c-status">${badge(p)}</div>
         <div class="c-act">
-          ${canUpdate ? `<button class="btn small ${p.status === "update" && !p.pinned ? "primary" : ""}" data-act="update">${btnLabel}</button>` : ""}
+          ${canUpdate && p.status === "update" && !p.pinned ? `<button class="btn small primary" data-act="update">Update</button>` : ""}
           <details class="more-actions"><summary aria-label="Options for ${esc(p.name)}" title="Addon options">···</summary><div class="action-menu">
+          ${canUpdate ? `<button class="btn small" data-act="update">${btnLabel}</button>` : ""}
           <button class="btn small" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Allow updates" : "Pin version"}</button>
           <button class="btn small" data-act="ignore" title="${p.ignored ? "Show it again" : "Hide it from the list and stop checking it, e.g. your own addons or ones with no update source"}">${p.ignored ? "Unignore" : "Ignore"}</button>
           <button class="btn small" data-act="remove" title="Delete these folders from AddOns (saved settings in WTF are kept)">Remove</button>
@@ -232,14 +235,10 @@ function renderInstalled() {
 
 $("installed-filter").addEventListener("input", renderInstalled);
 $("show-ignored").addEventListener("change", renderInstalled);
-document.querySelectorAll("[data-filter]").forEach((btn) => btn.addEventListener("click", () => {
-  activeFilter = btn.dataset.filter;
-  document.querySelectorAll("[data-filter]").forEach((b) => {
-    b.classList.toggle("active", b === btn);
-    b.setAttribute("aria-pressed", String(b === btn));
-  });
+$("installed-view").addEventListener("change", (e) => {
+  activeFilter = e.target.value;
   renderInstalled();
-}));
+});
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") document.querySelectorAll(".more-actions[open]").forEach((menu) => {
     menu.open = false;
@@ -267,7 +266,16 @@ $("installed-list").addEventListener("click", async (e) => {
   if (e.target.closest("[data-reset-filters]")) {
     $("installed-filter").value = "";
     $("show-ignored").checked = true;
-    document.querySelector('[data-filter="all"]').click();
+    activeFilter = "all";
+    $("installed-view").value = "all";
+    renderInstalled();
+    return;
+  }
+  const detailButton = e.target.closest("[data-package-detail]");
+  const row = e.target.closest(".item[data-key]");
+  if (detailButton || (row && !e.target.closest("button,a,summary,details"))) {
+    const p = packages.find((p) => p.key === row.dataset.key);
+    if (p) await openDetail(p.catalog_id, p);
     return;
   }
   const btn = e.target.closest("button[data-act]");
@@ -381,6 +389,7 @@ async function checkUpdates() {
   renderInstalled();
   try {
     packages = await invoke("check_updates");
+    $("last-checked").textContent = `Checked at ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`;
     renderInstalled();
     const n = packages.filter((p) => p.status === "update" && !p.ignored && !p.pinned).length;
     const unchecked = packages.filter((p) => !p.ignored && p.status !== "ok" && p.status !== "update").length;
@@ -458,34 +467,44 @@ $("browse-sort").addEventListener("change", renderCatalog);
 // ---------------------------------------------------------------- details window
 let detailId = null;
 let detailSeq = 0;
+let detailEntry = null;
+let detailFocus = null;
 function sourceLabel(e) {
   return e.github ? `GitHub \u00b7 ${e.github}` : e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge";
 }
 function entryUrl(e) {
   return e.url || (e.github ? "https://github.com/" + e.github : e.wago ? "https://addons.wago.io/addons/" + e.wago : e.wowi ? "https://www.wowinterface.com/downloads/info" + e.wowi : e.curse ? "https://www.curseforge.com/wow/addons/search?search=" + encodeURIComponent(e.name) : "");
 }
-async function openDetail(id) {
-  const e = catalog.find((x) => x.id === id);
+async function openDetail(id, installedPackage = null) {
+  const entry = catalog.find((x) => x.id === id);
+  const e = installedPackage ? { ...entry, id: entry?.id, name: installedPackage.name,
+    installed: true, desc: entry?.desc || installedPackage.notes || "",
+    url: entryUrl(entry || {}) || installedPackage.source_url || "" } : entry;
   if (!e) return;
-  detailId = id;
+  detailFocus = document.activeElement;
+  detailEntry = e;
+  detailId = id || `package:${installedPackage.key}`;
   const seq = ++detailSeq;
-  const src = icons.get("c:" + id);
+  const iconKey = installedPackage ? "p:" + installedPackage.key : "c:" + id;
+  const src = icons.get(iconKey);
   $("detail-icon").innerHTML = src ? `<img src="${src}" alt="">` : esc(e.name.replace(/^[^a-z0-9]+/i, "").charAt(0).toUpperCase() || "?");
-  $("detail-icon").dataset.ico = "c:" + id; // filled in by loadIcons if it arrives later
+  $("detail-icon").dataset.ico = iconKey; // filled in by loadIcons if it arrives later
   $("detail-name").textContent = e.name;
-  const bits = [e.category, sourceLabel(e)];
+  const bits = [e.category, installedPackage?.source_label || (entry ? sourceLabel(e) : "No update source")];
+  if (installedPackage?.installed_version) bits.push(`Installed: ${installedPackage.installed_version}`);
   if (e.downloads != null) bits.push(`${fmtCount(e.downloads)} downloads`);
   if (e.updated_at) bits.push(ago(e.updated_at));
   $("detail-meta").innerHTML = bits.filter(Boolean).map(esc).join(" \u00b7 ") +
     (e.forever === true ? ' \u00b7 <span class="badge forever">Forever</span>' : e.forever === false ? ' \u00b7 <span class="badge not-forever">No Forever build</span>' : "") +
     (e.installed ? ' \u00b7 <span class="badge ok">installed</span>' : "");
   $("detail-desc").textContent = e.desc || "";
-  $("detail-body").innerHTML = e.github ? '<div class="muted"><span class="spinner"></span> Reading its README\u2026</div>' : "";
+  const localInfo = installedPackage ? `<div class="muted">Folders: ${installedPackage.folders.map(esc).join(", ")}</div>` : "";
+  $("detail-body").innerHTML = localInfo + (e.github ? '<div class="muted"><span class="spinner"></span> Reading its README\u2026</div>' : "");
   const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
   const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
   $("detail-install").textContent = e.installed ? "Reinstall" : "Install";
   $("detail-install").classList.toggle("hidden", !canInstall);
-  $("detail-note").textContent = needsKey ? "Needs a Wago key (Settings)." : canInstall ? "" : "Not installable from here: get it from its page.";
+  $("detail-note").textContent = needsKey ? "Needs a Wago key (Settings)." : canInstall ? "" : installedPackage ? "Manage this addon from its row menu." : "Not installable from here: get it from its page.";
   $("detail-open").classList.toggle("hidden", !entryUrl(e));
   $("detail").classList.remove("hidden");
   $("detail-close").focus();
@@ -494,23 +513,26 @@ async function openDetail(id) {
   try {
     d = await invoke("addon_details", { id });
   } catch (_) {}
-  if (seq !== detailSeq) return;
-  const parts = [];
+  if (seq !== detailSeq || !detailId) return;
+  const parts = [localInfo];
   if (d?.image) parts.push(`<img class="shot" src="${d.image}" alt="Screenshot from the addon's README">`);
   if (d?.summary) parts.push(`<div class="readme">${esc(d.summary)}</div>`);
-  if (!parts.length) parts.push('<div class="muted">No README to show. Its page has the details.</div>');
+  if (!d?.image && !d?.summary) parts.push('<div class="muted">No README to show. Its page has the details.</div>');
   $("detail-body").innerHTML = parts.join("");
 }
 function closeDetail() {
   $("detail").classList.add("hidden");
   detailId = null;
+  detailEntry = null;
+  ++detailSeq;
+  detailFocus?.focus();
 }
 $("detail-close").onclick = closeDetail;
 $("detail").addEventListener("click", (e) => { if (e.target === $("detail")) closeDetail(); });
 document.addEventListener("keydown", (e) => { if (e.key === "Escape" && detailId) closeDetail(); });
-$("detail-open").onclick = () => { const e = catalog.find((x) => x.id === detailId); if (e) openUrl(entryUrl(e)); };
+$("detail-open").onclick = () => { const e = detailEntry; if (e) openUrl(entryUrl(e)); };
 $("detail-install").onclick = async () => {
-  const e = catalog.find((x) => x.id === detailId);
+  const e = detailEntry;
   if (!e || busy) return;
   closeDetail();
   await installCatalog(e, false);
@@ -675,8 +697,10 @@ async function loadSettings() {
     ? `${settings.catalog_count} addons · ${settings.catalog_source === "remote" ? "latest from GitHub" : "built-in copy (GitHub copy unreachable)"}${settings.catalog_updated ? " · " + settings.catalog_updated : ""}`
     : "not loaded yet";
   $("install-line").textContent = settings.install
-    ? `${settings.install.label} · ${settings.install.path}`
-    : "No WoW install selected. Open Settings to pick one.";
+    ? "Game folder connected"
+    : "No game folder selected — choose one in Settings";
+  $("install-line").classList.toggle("connected", !!settings.install);
+  $("footer-open-folder").disabled = !settings.install;
 }
 
 async function detect() {
@@ -729,6 +753,7 @@ $("btn-pick").onclick = async () => {
     toast(String(err), true);
   }
 };
+$("footer-open-folder").onclick = () => $("btn-open-folder").click();
 $("btn-open-folder").onclick = () => invoke("open_addons_folder").catch((e) => toast(String(e), true));
 $("btn-open-log").onclick = () => invoke("open_log").catch((e) => toast(String(e), true));
 $("btn-save-key").onclick = async () => {

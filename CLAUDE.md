@@ -130,6 +130,21 @@ very little memory and has no privacy issues. Decisions locked that day:
 - Dev hooks: ADDONFORGE_TAB=start|browse|settings|guide|detail:<id>.
   scripts/dev-shot.ps1 needs a SHORT output path (GDI+ fails on long ones).
 
+## Forge theme (shipped 2026-09-24, build 13)
+The owner restyled the UI in another tool and had it checked here before
+shipping. Brass-and-charcoal theme appended to the end of style.css (it
+overrides the earlier quiet-table rules; keep it at the end), serif small-caps
+wordmark next to the ember mark (ONE logo everywhere), 36px header with
+the tab bar under it, tabs renamed My addons / Find addons / Starter packs /
+Settings, "WoW: Forever · Installation settings" link top-right, status bar
+at the bottom (game-folder dot + Open AddOns folder), Installed tab has
+separate Installed / Available columns, a filter dropdown instead of
+buttons, "Checked at HH:MM", and the inline button is only ever Update
+(Install/Reinstall live in the row menu). Clicking an installed addon's name
+opens the same details window as Browse (openDetail with the package).
+Review notes that were applied before shipping: no duplicate selection
+panel under the table, no second logo, header kept short.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge
