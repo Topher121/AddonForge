@@ -23,6 +23,9 @@ On top of that there is a **catalogue**: [`catalog/forever.json`](catalog/foreve
 
 ## What it does
 
+- **Starter packs** for people new to addons: six hand-picked sets (a good start, levelling, dungeons and raids, quality of life, bags, chat) with one-click install, plus a plain-English guide to what addons are, where they live and how to turn them on.
+- Click any addon to read about it: description, download count, last update, the first screenshot and text from its README (fetched through GitHub, cached for a day).
+- Sort the catalogue by name, most downloaded or recently updated. Download totals come from a daily GitHub Action that sums each author's release downloads into [`catalog/stats.json`](catalog/stats.json).
 - Finds your WoW: Forever install and lists every addon in it, grouped properly (BigWigs and its twelve zone folders are one row).
 - Checks for updates in parallel, straight from where each author publishes.
 - Installs from the catalogue, or from **any GitHub repo** you paste in.

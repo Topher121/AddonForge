@@ -97,6 +97,39 @@ very little memory and has no privacy issues. Decisions locked that day:
   "A new version of AddonForge is available … Please update to the
   latest" and the notes are shown after the update instead.
 
+## v0.3.0 Discover update (shipped 2026-09-24, build 12)
+- **Icons** (src/icons.rs): the addon's own "## IconTexture" file (TGA/BLP/PNG,
+  decoded with the image + image-blp crates; BLP goes via a raw RGBA buffer
+  because image-blp pins an older image crate), else the GitHub author
+  avatar, else a lettered tile drawn by the UI. Cached as 32px PNGs in
+  %APPDATA%\AddonForge\icons\, handed to the UI as data URLs and filled
+  into rows in place (no re-render). Commands package_icons / catalog_icons.
+- **Download counts + sort**: catalog/stats.json is written daily by
+  .github/workflows/stats.yml (scripts/build-stats.js: sums GitHub release
+  asset download_count over all releases; WoWI UIDownloadTotal). A copy is
+  compiled in as fallback. Browse sorts by Name / Most downloaded /
+  Recently updated; the column shows "48k" plus "updated N days ago".
+- **Starter packs tab** (tab-start): "bundles" in forever.json (id, name,
+  desc, addons[], note); the validator checks every id exists. Command
+  "bundles" returns install state per addon; "Install all" runs
+  install_catalog sequentially and skips NOT_FOREVER with a toast. The owner
+  2026-09-24: never call a pack "Essentials", nothing is essential. The
+  "New to addons?" guide lives at the top of this tab and opens itself when
+  nothing is installed.
+- **Details window** (addon_details): click a chip or a Browse row name.
+  GitHub entries get a README excerpt (raw markdown, stripped) and the first
+  real picture from GitHub's RENDERED README (api.github.com/repos/x/readme
+  with Accept vnd.github.html: off-site images come back through
+  camo.githubusercontent.com, so the app still only talks to GitHub; direct
+  imgur etc. links are refused). Badges, logos and widgets are skipped.
+  Cached a day as json + jpeg (<=720px) in the icons dir. One API call per
+  addon opened.
+- Catalogue: whichever copy is NEWER by "updated" wins (bundled vs remote),
+  so a fresh build is not downgraded by a stale GitHub copy. Bump "updated"
+  whenever forever.json changes.
+- Dev hooks: ADDONFORGE_TAB=start|browse|settings|guide|detail:<id>.
+  scripts/dev-shot.ps1 needs a SHORT output path (GDI+ fails on long ones).
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge

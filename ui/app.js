@@ -12,9 +12,50 @@ let busy = false;
 let settings = null;
 let selfUpdate = null;
 let activeFilter = "all";
+let bundles = [];
+const icons = new Map(); // "p:<package key>" / "c:<catalogue id>" -> data URL, or null when there is none
 const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.missing_deps.length > 0 || !p.supports_forever;
 
 // ---------------------------------------------------------------- helpers
+function iconTile(kind, id, name) {
+  const src = icons.get(kind + ":" + id);
+  const letter = esc(String(name || "?").replace(/^[^a-z0-9]+/i, "").charAt(0).toUpperCase() || "?");
+  return `<span class="ico" data-ico="${esc(kind + ":" + id)}" aria-hidden="true">${src ? `<img src="${src}" alt="">` : letter}</span>`;
+}
+// Fetch icons for rows that don't have one yet and drop them into the DOM in place (no re-render).
+async function loadIcons(kind, ids) {
+  const want = ids.filter((id) => !icons.has(kind + ":" + id));
+  if (!want.length) return;
+  let got;
+  try {
+    got = await invoke(kind === "p" ? "package_icons" : "catalog_icons", kind === "p" ? { keys: want } : { ids: want });
+  } catch (_) {
+    return;
+  }
+  if (!got) return;
+  for (const id of want) icons.set(kind + ":" + id, got[id] || null);
+  for (const [id, src] of Object.entries(got)) {
+    document.querySelectorAll(`[data-ico="${CSS.escape(kind + ":" + id)}"]`).forEach((el) => { el.innerHTML = `<img src="${src}" alt="">`; });
+  }
+}
+function fmtCount(n) {
+  if (n == null) return "";
+  if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
+  if (n >= 1e3) return (n / 1e3).toFixed(n >= 1e4 ? 0 : 1).replace(/\.0$/, "") + "k";
+  return String(n);
+}
+function ago(iso) {
+  if (!iso) return "";
+  const days = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (!Number.isFinite(days) || days < 0) return "";
+  if (days === 0) return "updated today";
+  if (days === 1) return "updated yesterday";
+  if (days < 14) return `updated ${days} days ago`;
+  if (days < 60) return `updated ${Math.floor(days / 7)} weeks ago`;
+  if (days < 365) return `updated ${Math.floor(days / 30)} months ago`;
+  return `updated ${Math.floor(days / 365)} year${days < 730 ? "" : "s"} ago`;
+}
+
 let toastTimer;
 function toast(msg, bad = false) {
   const t = $("toast");
@@ -97,7 +138,7 @@ document.querySelectorAll(".tab").forEach((btn) =>
     });
     document.querySelectorAll(".panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
     document.querySelector("main").scrollTop = 0;
-    if (btn.dataset.tab === "browse" && !catalog.length) loadCatalog(false);
+    if ((btn.dataset.tab === "browse" || btn.dataset.tab === "start") && !catalog.length) loadCatalog(false);
     if (btn.dataset.tab === "settings") loadSettings();
   })
 );
@@ -132,7 +173,7 @@ function renderInstalled() {
   const eligible = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored).length;
   $("btn-update-all").textContent = eligible ? `Update all (${eligible})` : "Update all";
   if (!packages.length) {
-    list.innerHTML = `<div class="empty"><strong>No addons found</strong>Nothing in this installation's AddOns folder yet.<br><button class="btn" data-navigate="browse">Discover addons</button></div>`;
+    list.innerHTML = `<div class="empty"><strong>No addons found</strong>Nothing in this installation's AddOns folder yet.<br><button class="btn" data-navigate="start">Discover addons</button></div>`;
     $("summary").textContent = "";
     setBusy(busy);
     return;
@@ -160,7 +201,7 @@ function renderInstalled() {
             : "";
           const sub = p.author ? esc(p.author) : "";
           return `<div class="item ${p.ignored ? "ignored" : ""} ${p.status === "no-source" || p.status === "curse-only" ? "dim" : ""}" data-key="${esc(p.key)}">
-        <div class="c-name"><span class="nm">${esc(p.name)}</span>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div>
+        <div class="c-name">${iconTile("p", p.key, p.name)}<div class="nm-wrap"><span class="nm">${esc(p.name)}</span>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div></div>
         <div class="c-ver">${ver}${remote}</div>
         <div class="c-src">${src}</div>
         <div class="c-status">${badge(p)}</div>
@@ -320,6 +361,8 @@ async function rescan(keepStatus = false) {
     }
     packages = fresh;
     renderInstalled();
+    loadIcons("p", packages.map((p) => p.key));
+    if (!packages.length) $("guide").open = true; // nothing installed yet: probably new to this
   } catch (err) {
     packages = [];
     renderInstalled();
@@ -361,9 +404,17 @@ $("btn-rescan").onclick = () => rescan();
 $("btn-update-all").onclick = updateAll;
 
 // ---------------------------------------------------------------- browse
+function sortedCatalog(rows) {
+  const by = $("browse-sort").value || "name";
+  const name = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
+  if (by === "downloads") return rows.sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || name(a, b));
+  if (by === "updated") return rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || name(a, b));
+  return rows.sort(name);
+}
+
 function renderCatalog() {
   const q = $("browse-filter").value.trim().toLowerCase();
-  const rows = catalog.filter((e) => !q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q));
+  const rows = sortedCatalog(catalog.filter((e) => !q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q)));
   $("browse-list").innerHTML = rows.length
     ? rows
         .map((e) => {
@@ -372,8 +423,9 @@ function renderCatalog() {
           const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
           const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
           return `<div class="item" data-id="${esc(e.id)}">
-            <div class="c-name"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div>
+            <div class="c-name clickable" data-detail="${esc(e.id)}" title="Details">${iconTile("c", e.id, e.name)}<div class="nm-wrap"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div></div>
             <div class="c-cat muted">${esc(e.category || "")}</div>
+            <div class="c-dl" title="${e.downloads != null ? esc(e.downloads.toLocaleString() + " downloads, all time, counted on " + (e.stat_source === "wowi" ? "WoWInterface" : "GitHub")) : "No download count for this source"}">${e.downloads != null ? `<b>${fmtCount(e.downloads)}</b>` : `<span class="muted">\u2014</span>`}${e.updated_at ? `<div class="sub-line">${ago(e.updated_at)}</div>` : ""}</div>
             <div class="c-src"><a href="#" data-url="${esc(e.url || (e.github ? "https://github.com/" + e.github : "#"))}">${esc(src)}</a></div>
             <div class="c-act">
               ${canInstall ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">needs Wago key</span>` : `<span class="badge curse-only">link only</span>`}
@@ -391,6 +443,8 @@ async function loadCatalog(refresh) {
   try {
     catalog = await invoke("catalog_list", { refresh });
     renderCatalog();
+    loadIcons("c", catalog.map((e) => e.id));
+    loadBundles();
   } catch (err) {
     toast(String(err), true);
   } finally {
@@ -399,8 +453,142 @@ async function loadCatalog(refresh) {
 }
 
 $("browse-filter").addEventListener("input", renderCatalog);
+$("browse-sort").addEventListener("change", renderCatalog);
+
+// ---------------------------------------------------------------- details window
+let detailId = null;
+let detailSeq = 0;
+function sourceLabel(e) {
+  return e.github ? `GitHub \u00b7 ${e.github}` : e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge";
+}
+function entryUrl(e) {
+  return e.url || (e.github ? "https://github.com/" + e.github : e.wago ? "https://addons.wago.io/addons/" + e.wago : e.wowi ? "https://www.wowinterface.com/downloads/info" + e.wowi : e.curse ? "https://www.curseforge.com/wow/addons/search?search=" + encodeURIComponent(e.name) : "");
+}
+async function openDetail(id) {
+  const e = catalog.find((x) => x.id === id);
+  if (!e) return;
+  detailId = id;
+  const seq = ++detailSeq;
+  const src = icons.get("c:" + id);
+  $("detail-icon").innerHTML = src ? `<img src="${src}" alt="">` : esc(e.name.replace(/^[^a-z0-9]+/i, "").charAt(0).toUpperCase() || "?");
+  $("detail-icon").dataset.ico = "c:" + id; // filled in by loadIcons if it arrives later
+  $("detail-name").textContent = e.name;
+  const bits = [e.category, sourceLabel(e)];
+  if (e.downloads != null) bits.push(`${fmtCount(e.downloads)} downloads`);
+  if (e.updated_at) bits.push(ago(e.updated_at));
+  $("detail-meta").innerHTML = bits.filter(Boolean).map(esc).join(" \u00b7 ") +
+    (e.forever === true ? ' \u00b7 <span class="badge forever">Forever</span>' : e.forever === false ? ' \u00b7 <span class="badge not-forever">No Forever build</span>' : "") +
+    (e.installed ? ' \u00b7 <span class="badge ok">installed</span>' : "");
+  $("detail-desc").textContent = e.desc || "";
+  $("detail-body").innerHTML = e.github ? '<div class="muted"><span class="spinner"></span> Reading its README\u2026</div>' : "";
+  const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
+  const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
+  $("detail-install").textContent = e.installed ? "Reinstall" : "Install";
+  $("detail-install").classList.toggle("hidden", !canInstall);
+  $("detail-note").textContent = needsKey ? "Needs a Wago key (Settings)." : canInstall ? "" : "Not installable from here: get it from its page.";
+  $("detail-open").classList.toggle("hidden", !entryUrl(e));
+  $("detail").classList.remove("hidden");
+  $("detail-close").focus();
+  if (!e.github) return;
+  let d = null;
+  try {
+    d = await invoke("addon_details", { id });
+  } catch (_) {}
+  if (seq !== detailSeq) return;
+  const parts = [];
+  if (d?.image) parts.push(`<img class="shot" src="${d.image}" alt="Screenshot from the addon's README">`);
+  if (d?.summary) parts.push(`<div class="readme">${esc(d.summary)}</div>`);
+  if (!parts.length) parts.push('<div class="muted">No README to show. Its page has the details.</div>');
+  $("detail-body").innerHTML = parts.join("");
+}
+function closeDetail() {
+  $("detail").classList.add("hidden");
+  detailId = null;
+}
+$("detail-close").onclick = closeDetail;
+$("detail").addEventListener("click", (e) => { if (e.target === $("detail")) closeDetail(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && detailId) closeDetail(); });
+$("detail-open").onclick = () => { const e = catalog.find((x) => x.id === detailId); if (e) openUrl(entryUrl(e)); };
+$("detail-install").onclick = async () => {
+  const e = catalog.find((x) => x.id === detailId);
+  if (!e || busy) return;
+  closeDetail();
+  await installCatalog(e, false);
+  renderBundles();
+};
+
+// ---------------------------------------------------------------- starter packs
+async function loadBundles() {
+  try {
+    bundles = (await invoke("bundles")) || [];
+  } catch (_) {
+    bundles = [];
+  }
+  renderBundles();
+}
+
+function renderBundles() {
+  const box = $("bundle-list");
+  if (!bundles.length) {
+    box.innerHTML = "";
+    return;
+  }
+  box.innerHTML = bundles
+    .map((b) => {
+      const todo = b.addons.filter((a) => a.installable && !a.installed);
+      const chips = b.addons
+        .map((a) => {
+          const state = a.installed ? "have" : a.installable ? "todo" : a.needs_key ? "key" : "link";
+          const tip = a.installed ? "Installed" : a.installable ? a.desc : a.needs_key ? "Needs a Wago key (Settings)" : "Link only, not installable from here";
+          return `<button class="chip ${state}" data-detail="${esc(a.id)}" title="${esc(tip)}">${iconTile("c", a.id, a.name)}${esc(a.name)}${a.installed ? " \u2713" : ""}</button>`;
+        })
+        .join("");
+      const label = todo.length ? `Install all (${todo.length})` : b.addons.some((a) => a.installed) ? "Installed" : "Nothing to install";
+      return `<div class="bundle" data-bundle="${esc(b.id)}">
+        <div class="bundle-head"><span class="bundle-name">${esc(b.name)}</span><span class="grow"></span>
+          <button class="btn small ${todo.length ? "primary" : ""}" data-act="bundle" ${todo.length ? "" : "disabled"}>${label}</button></div>
+        <div class="bundle-desc">${esc(b.desc)}</div>
+        <div class="chips">${chips}</div>
+        ${b.note ? `<div class="bundle-note">${esc(b.note)}</div>` : ""}
+      </div>`;
+    })
+    .join("");
+  setBusy(busy);
+}
+
+$("bundle-list").addEventListener("click", async (e) => {
+  const d = e.target.closest("[data-detail]");
+  if (d) return openDetail(d.dataset.detail);
+  const btn = e.target.closest("button[data-act=bundle]");
+  if (!btn || busy) return;
+  const b = bundles.find((x) => x.id === btn.closest(".bundle").dataset.bundle);
+  if (!b) return;
+  const todo = b.addons.filter((a) => a.installable && !a.installed);
+  setBusy(true);
+  let done = 0;
+  const skipped = [];
+  for (const a of todo) {
+    btn.innerHTML = `<span class="spinner"></span> ${done + skipped.length + 1} / ${todo.length}: ${esc(a.name)}`;
+    try {
+      await invoke("install_catalog", { id: a.id, allowNonForever: false });
+      a.installed = true;
+      const row = catalog.find((c) => c.id === a.id);
+      if (row) row.installed = true;
+      done++;
+    } catch (err) {
+      skipped.push(String(err) === "NOT_FOREVER" ? `${a.name} (no Forever build)` : `${a.name}: ${explainError(err)}`);
+    }
+  }
+  setBusy(false);
+  toast(skipped.length ? `Installed ${done} of ${todo.length}. Skipped ${skipped.join("; ")}` : `Installed ${done} addon${done === 1 ? "" : "s"} from ${b.name}`, skipped.length > 0);
+  renderBundles();
+  renderCatalog();
+  await rescan(true);
+});
 $("btn-catalog-refresh").onclick = () => loadCatalog(true);
 $("browse-list").addEventListener("click", async (e) => {
+  const d = e.target.closest("[data-detail]");
+  if (d && !e.target.closest("a")) return openDetail(d.dataset.detail);
   const btn = e.target.closest("button[data-act=install]");
   if (!btn || busy) return;
   const id = btn.closest(".item").dataset.id;
@@ -415,6 +603,8 @@ async function installCatalog(entry, allowNonForever) {
     const p = await invoke("install_catalog", { id: entry.id, allowNonForever });
     toast(`Installed ${p.name} ${p.installed_version || ""}`);
     entry.installed = true;
+    for (const b of bundles) for (const a of b.addons) if (a.id === entry.id) a.installed = true;
+    renderBundles();
     renderCatalog();
     await rescan(true);
   } catch (err) {
@@ -716,7 +906,9 @@ $("selfupdate-go").onclick = async () => {
   }
   loadCatalog(false);
   checkSelf(false);
-  if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();
+  if (settings?.start_tab?.startsWith("detail:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); openDetail(settings.start_tab.slice(7)); }
+  else if (settings?.start_tab === "guide") { document.querySelector(`.tab[data-tab="start"]`)?.click(); $("guide").open = true; }
+  else if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();
   // One-time note on the first launch after an update.
   invoke("whats_new")
     .then((w) => {

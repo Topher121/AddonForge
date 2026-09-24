@@ -17,6 +17,7 @@
   <nav class="tabs" aria-label="Main navigation">
     <button class="tab active" data-tab="installed" aria-current="page">Installed</button>
     <button class="tab" data-tab="browse">Browse</button>
+    <button class="tab" data-tab="start">Starter packs</button>
     <button class="tab" data-tab="settings">Settings</button>
   </nav>
 </header>
@@ -58,6 +59,12 @@
   <section id="tab-browse" class="panel">
     <div class="toolbar">
       <input id="browse-filter" type="search" placeholder="Filter the catalogue" aria-label="Search catalogue">
+      <label class="lbl" for="browse-sort">Sort</label>
+      <select id="browse-sort" aria-label="Sort catalogue">
+        <option value="name">Name</option>
+        <option value="downloads">Most downloaded</option>
+        <option value="updated">Recently updated</option>
+      </select>
       <span id="browse-summary" class="count"></span>
       <span class="grow"></span>
       <button id="btn-catalog-refresh" class="btn">Refresh catalogue</button>
@@ -69,10 +76,26 @@
       <span class="hint">Any repo that publishes releases, listed here or not.</span>
     </div>
     <div class="thead cols-browse" aria-hidden="true">
-      <span>Addon</span><span>Category</span><span>Source</span><span></span>
+      <span>Addon</span><span>Category</span><span>Downloads</span><span>Source</span><span></span>
     </div>
     <div id="browse-list" class="list"></div>
     <p class="hint">The catalogue is a public list on GitHub. Add an addon with a pull request and it downloads straight from the author's own releases.</p>
+  </section>
+
+  <section id="tab-start" class="panel">
+    <details class="guide" id="guide">
+      <summary>New to addons? Start here</summary>
+      <div class="guide-body">
+        <p><b>What an addon is.</b> A small folder of text files (Lua and XML) that WoW loads when you log in. Addons can change how the interface looks and add helpers like boss timers or a better bag window. They cannot play the game for you, and on Forever a lot of combat information is deliberately hidden from them.</p>
+        <p><b>Where they live.</b> Inside your WoW folder, under <code>Interface\AddOns</code>. Each addon is one or more folders in there. That is the only place AddonForge writes to. Your settings for each addon are kept separately in the <code>WTF</code> folder, which AddonForge never touches, so removing or updating an addon does not lose its settings.</p>
+        <p><b>Turning them on.</b> Install from here, then start WoW. On the character-select screen there is an <b>AddOns</b> button in the corner: tick the ones you want and untick any you don't. Already in game? Type <code>/reload</code> in chat after installing to load them.</p>
+        <p><b>"Forever" builds.</b> Forever uses a newer interface than Classic Era, so addons need a version made for it. AddonForge tells you which ones have one. An addon marked "not for Forever" may still load but can error or show nothing.</p>
+        <p><b>Updates.</b> Open AddonForge now and then, or leave it to check when it starts. Authors publish a new version, you press Update, done. Pin an addon if you want to hold it at a version you like.</p>
+        <p><b>Beta note.</b> The Forever beta has a bug where addon settings sometimes don't load on the next login. That is the game, not the addon. Some people use an addon called SVShim from the catalogue as a workaround until Blizzard fixes it.</p>
+      </div>
+    </details>
+    <div class="section-title">Starter packs <span class="hint inline">Hand-picked sets. Install a whole pack, or click an addon to read about it.</span></div>
+    <div id="bundle-list" class="bundles"></div>
   </section>
 
   <section id="tab-settings" class="panel prefs">
@@ -151,6 +174,25 @@
 </main>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
+<div id="detail" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="detail-name">
+  <div class="modal-card detail-card">
+    <button id="detail-close" class="link close" aria-label="Close">&times;</button>
+    <div class="detail-head">
+      <span id="detail-icon" class="ico big"></span>
+      <div class="nm-wrap">
+        <div id="detail-name" class="detail-name"></div>
+        <div id="detail-meta" class="muted"></div>
+      </div>
+    </div>
+    <p id="detail-desc"></p>
+    <div id="detail-body" class="detail-body"></div>
+    <div class="row right">
+      <span id="detail-note" class="muted grow"></span>
+      <button id="detail-open" class="btn">Open its page</button>
+      <button id="detail-install" class="btn primary">Install</button>
+    </div>
+  </div>
+</div>
 <div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-text">
   <div class="modal-card">
     <div id="modal-text"></div>
