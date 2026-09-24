@@ -2,22 +2,22 @@
  "updated": "2026-09-24",
  "entries": {
   "bigwigs": {
-   "downloads": 2593233,
+   "downloads": 2593242,
    "updated_at": "2026-09-23T19:26:36Z",
    "source": "github"
   },
   "dbm": {
-   "downloads": 1180901,
+   "downloads": 1180905,
    "updated_at": "2026-09-19T23:03:11Z",
    "source": "github"
   },
   "dbm-dungeons": {
-   "downloads": 656962,
+   "downloads": 656964,
    "updated_at": "2026-09-20T20:35:39Z",
    "source": "github"
   },
   "dbm-vanilla": {
-   "downloads": 259375,
+   "downloads": 259376,
    "updated_at": "2026-09-20T20:35:01Z",
    "source": "github"
   },
@@ -27,7 +27,7 @@
    "source": "github"
   },
   "plater": {
-   "downloads": 893234,
+   "downloads": 893235,
    "updated_at": "2026-09-19T16:38:47Z",
    "source": "github"
   },
@@ -47,12 +47,12 @@
    "source": "github"
   },
   "restedxp": {
-   "downloads": 1699613,
+   "downloads": 1699660,
    "updated_at": "2026-09-22T04:36:35Z",
    "source": "github"
   },
   "classicui-forever": {
-   "downloads": 219,
+   "downloads": 221,
    "updated_at": "2026-09-24T10:09:24Z",
    "source": "github"
   },
@@ -72,7 +72,7 @@
    "source": "github"
   },
   "betterbags": {
-   "downloads": 193329,
+   "downloads": 193330,
    "updated_at": "2026-09-20T17:26:30Z",
    "source": "github"
   },
@@ -82,7 +82,7 @@
    "source": "github"
   },
   "betterbags-bound": {
-   "downloads": 31636,
+   "downloads": 31638,
    "updated_at": "2026-09-14T21:21:33Z",
    "source": "github"
   },
@@ -97,7 +97,7 @@
    "source": "github"
   },
   "bugsack": {
-   "downloads": 800495,
+   "downloads": 800496,
    "updated_at": "2026-09-19T13:45:36Z",
    "source": "github"
   },
@@ -132,7 +132,7 @@
    "source": "github"
   },
   "all-the-things": {
-   "downloads": 709205,
+   "downloads": 709213,
    "updated_at": "2026-09-20T19:55:24Z",
    "source": "github"
   },
@@ -142,7 +142,7 @@
    "source": "github"
   },
   "equip-recommended-gear": {
-   "downloads": 3459,
+   "downloads": 3460,
    "updated_at": "2026-09-19T17:41:29Z",
    "source": "github"
   },
@@ -187,12 +187,12 @@
    "source": "github"
   },
   "edit-mode-expanded": {
-   "downloads": 46012,
+   "downloads": 46013,
    "updated_at": "2026-09-20T19:50:04Z",
    "source": "github"
   },
   "gathering-tracker": {
-   "downloads": 75830,
+   "downloads": 75837,
    "updated_at": "2026-09-18T01:58:11Z",
    "source": "github"
   },
@@ -287,7 +287,7 @@
    "source": "github"
   },
   "waypoint-ui": {
-   "downloads": 93,
+   "downloads": 94,
    "updated_at": "2026-09-24T06:37:46Z",
    "source": "github"
   },
@@ -307,8 +307,8 @@
    "source": "github"
   },
   "shaman-forever": {
-   "downloads": 20,
-   "updated_at": "2026-09-24T06:10:58Z",
+   "downloads": 21,
+   "updated_at": "2026-09-24T10:51:36Z",
    "source": "github"
   },
   "hiding-bar": {
@@ -317,7 +317,7 @@
    "source": "github"
   },
   "tellmewhen": {
-   "downloads": 379366,
+   "downloads": 379367,
    "updated_at": "2026-09-17T16:51:12Z",
    "source": "github"
   },
@@ -327,7 +327,7 @@
    "source": "github"
   },
   "molinari": {
-   "downloads": 61439,
+   "downloads": 61440,
    "updated_at": "2026-09-01T13:01:42Z",
    "source": "github"
   },
@@ -452,17 +452,17 @@
    "source": "wowi"
   },
   "questie": {
-   "downloads": 6950314,
+   "downloads": 6950334,
    "updated_at": "2026-09-15T20:54:18Z",
    "source": "github"
   },
   "prat": {
-   "downloads": 217931,
+   "downloads": 217932,
    "updated_at": "2026-09-19T19:22:25Z",
    "source": "github"
   },
   "blizzmove": {
-   "downloads": 281798,
+   "downloads": 281799,
    "updated_at": "2026-09-20T20:38:50Z",
    "source": "github"
   }
