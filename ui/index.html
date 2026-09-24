@@ -11,16 +11,16 @@
   <div class="brand">
     <img src="icon.svg" alt="" class="mark">
     <span class="name">AddonForge</span>
-    <span class="sub" id="install-line">Looking for your installation…</span>
-    <button class="link small" data-navigate="settings">Change</button>
+
   </div>
+  <button class="game-settings" data-navigate="settings" title="View or change your WoW installation folder">WoW: Forever <span>Installation settings</span></button>
+</header>
   <nav class="tabs" aria-label="Main navigation">
-    <button class="tab active" data-tab="installed" aria-current="page">Installed</button>
-    <button class="tab" data-tab="browse">Browse</button>
+    <button class="tab active" data-tab="installed" aria-current="page">My addons</button>
+    <button class="tab" data-tab="browse">Find addons</button>
     <button class="tab" data-tab="start">Starter packs</button>
     <button class="tab" data-tab="settings">Settings</button>
   </nav>
-</header>
 
 <div id="selfupdate" class="banner hidden">
   <span id="selfupdate-text"></span>
@@ -31,29 +31,27 @@
 
 <main>
   <section id="tab-installed" class="panel active">
-    <div class="toolbar">
-      <input id="installed-filter" type="search" placeholder="Filter" aria-label="Filter installed addons">
-      <div class="filters" role="group" aria-label="Filter addons">
-        <button class="filter active" data-filter="all" aria-pressed="true">All</button>
-        <button class="filter" data-filter="updates" aria-pressed="false">Updates</button>
-        <button class="filter" data-filter="attention" aria-pressed="false">Needs attention</button>
-      </div>
-      <label class="chk"><input type="checkbox" id="show-ignored"> Show ignored</label>
+    <div class="toolbar installed-toolbar">
+      <input id="installed-filter" type="search" placeholder="Search addons" aria-label="Search installed addons">
+      <select id="installed-view" aria-label="Filter addons"><option value="all">All addons</option><option value="updates">Updates available</option><option value="attention">Needs attention</option></select>
       <span class="grow"></span>
       <button id="btn-rescan" class="btn" title="Read the AddOns folder again">Rescan</button>
       <button id="btn-check" class="btn">Check for updates</button>
       <button id="btn-update-all" class="btn primary" disabled>Update all</button>
     </div>
     <div class="strip">
-      <span><b id="stat-total">0</b> installed</span>
-      <span><b id="stat-updates">0</b> updates</span>
-      <span><b id="stat-attention">0</b> need attention</span>
-      <span id="summary" class="grow right" role="status"></span>
+      <span><b id="stat-total">0</b> addons · <b id="stat-updates">0</b> updates available</span>
+      <span class="attention-count"><b id="stat-attention">0</b> need attention</span>
+      <span id="summary" class="sr-only" role="status"></span>
+      <span class="grow"></span><label class="chk"><input type="checkbox" id="show-ignored"> Show ignored</label>
+      <span id="last-checked">Not checked yet</span>
     </div>
-    <div class="thead cols-installed" aria-hidden="true">
-      <span>Addon</span><span>Version</span><span>Source</span><span>Status</span><span></span>
+    <div class="addon-table">
+      <div class="thead cols-installed" aria-hidden="true">
+        <span>Addon</span><span>Installed</span><span>Available</span><span>Source</span><span>Status</span><span></span>
+      </div>
+      <div id="installed-list" class="list"></div>
     </div>
-    <div id="installed-list" class="list"></div>
   </section>
 
   <section id="tab-browse" class="panel">
@@ -173,6 +171,7 @@
   </section>
 </main>
 
+<footer class="statusbar"><span id="install-line">Looking for your installation…</span><button class="link" id="footer-open-folder">Open AddOns folder</button></footer>
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
 <div id="detail" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="detail-name">
   <div class="modal-card detail-card">
