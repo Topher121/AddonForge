@@ -261,7 +261,7 @@ cover this — keep them green.
 ## Launch + queue (2026-09-22 evening)
 - ANNOUNCED on r/wowforever (the owner's account, Discussion flair, ~12
   upvotes / 1.9K views / 3 friendly comments in the first hour; 2 real
-  downloads of b9 by 21:00). Draft + ready replies: `docs/announcement-reddit.md`.
+  downloads of b9 by 21:00). The announcement draft was public in docs/ for the launch buzz and removed 2026-09-24 (the owner's call); a copy is in private/ (gitignored).
   r/wowaddons crosspost planned a day later; never r/wow (retail).
 - Feedback channels: GitHub issues (owner gets email; Report button
   pre-fills), the Reddit thread, studio email, Ko-fi messages. Mention
