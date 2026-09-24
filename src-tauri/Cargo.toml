@@ -24,6 +24,9 @@ futures-util = "0.3"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 dirs = "5"
 anyhow = "1"
+image = { version = "0.25", default-features = false, features = ["png", "tga", "jpeg", "gif"] }
+image-blp = "1"
+base64 = "0.22"
 
 [profile.release]
 opt-level = "s"

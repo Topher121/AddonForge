@@ -23,7 +23,7 @@ const ids = new Set();
 const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever"]);
+const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever", "icon"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
   const where = `addons[${i}]${a && a.id ? ` (${a.id})` : ""}`;
@@ -57,6 +57,16 @@ for (const [i, a] of (cat.addons || []).entries()) {
   }
   const hasSource = a.github || a.wago || a.wowi || a.tukui;
   if (!hasSource && !a.curse && !a.url) problems.push(`${where}: needs a source (github/wago/wowi/tukui) or at least a curse id / url for a link-only entry`);
+}
+
+// bundles: every id must exist
+const known = new Set(cat.addons.map((a) => a.id));
+for (const [i, b] of (cat.bundles || []).entries()) {
+  const where = `bundles[${i}]${b && b.id ? ` (${b.id})` : ""}`;
+  if (!b || typeof b.id !== "string" || !idRe.test(b.id)) problems.push(`${where}: "id" must be kebab-case`);
+  if (typeof b.name !== "string" || !b.name.trim()) problems.push(`${where}: "name" is required`);
+  if (!Array.isArray(b.addons) || !b.addons.length) problems.push(`${where}: "addons" must list catalogue ids`);
+  else for (const id of b.addons) if (!known.has(id)) problems.push(`${where}: unknown addon id "${id}"`);
 }
 
 if (problems.length) {

@@ -1,0 +1,28 @@
+name: Update download stats
+
+on:
+  schedule:
+    - cron: "17 4 * * *"   # daily, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build catalog/stats.json
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build-stats.js
+      - name: Commit if changed
+        run: |
+          git config user.name "Pocket Forge Studios"
+          git config user.email "PocketForgeStudios@proton.me"
+          git add catalog/stats.json
+          git diff --cached --quiet && echo "no change" || git commit -m "stats: daily download totals" && git push
