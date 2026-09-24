@@ -1,6 +1,6 @@
 [package]
 name = "addonforge"
-version = "0.2.0"
+version = "0.3.0"
 description = "Lightweight, telemetry-free addon manager for WoW: Forever"
 authors = ["Pocket Forge Studios"]
 edition = "2021"
