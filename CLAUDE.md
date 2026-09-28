@@ -145,6 +145,27 @@ opens the same details window as Browse (openDetail with the package).
 Review notes that were applied before shipping: no duplicate selection
 panel under the table, no second logo, header kept short.
 
+## CurseForge API (approved 2026-09-28, NOT connected yet)
+CurseForge approved AddonForge for the 3rd Party API. Nothing is built.
+The owner's rule: be 100% sure no terms are broken before hooking it up.
+A support email went to cfforstudios@overwolf.com on 2026-09-28 asking
+(1) may the key be embedded in release builds if it never enters the repo,
+(2) may the app store installed file id + version locally (terms 3.1e
+forbid saving or caching API data), (3) is installing from GitHub / Wago /
+WoWI a problem under the non-compete wording. Also a console login problem
+(account was created by them; reset email not arriving). WAIT for their
+written answer before writing any CurseForge code.
+Hard constraints from the terms whatever they answer: key never in the repo
+or chat (private/curseforge-key.txt, gitignored); no disk cache of API
+data and none of it in stats.json; no proxy or relay server (terms forbid
+it); authors who opt out of distribution stay link-only, never build a
+download link around it; keep calls minimal (quota can trigger a paid
+licence); GitHub stays the preferred source when an addon has both; the
+account should be under Pocket Forge Studios, not a personal name.
+API: base https://api.curseforge.com, header x-api-key, WoW is one game with
+gameVersionTypeId per flavour (517 = retail); find Forever's id with
+GET /v1/games/{id}/version-types once the key exists.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge
