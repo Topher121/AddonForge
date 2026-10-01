@@ -65,6 +65,8 @@ pub struct Package {
     pub source_url: Option<String>,
     pub curse_id: Option<u64>,
     pub catalog_id: Option<String>,
+    /// Catalogue `notice` for this addon, shown on its row.
+    pub notice: Option<String>,
     pub supports_forever: bool,
     /// True when AddonForge installed this itself (exact version known).
     pub managed: bool,
@@ -332,10 +334,12 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             source_url: source
                 .as_ref()
                 .map(|s| s.url())
-                .or_else(|| curse_id.map(|c| format!("https://www.curseforge.com/projects/{c}"))),
+                .or_else(|| curse_id.map(|c| format!("https://www.curseforge.com/projects/{c}")))
+                .or_else(|| entry.and_then(|e| e.url.clone())),
             source,
             curse_id,
             catalog_id: entry.map(|e| e.id.clone()),
+            notice: entry.and_then(|e| e.notice.clone()).filter(|n| !n.trim().is_empty()),
             supports_forever,
             managed: managed.is_some(),
             missing_deps: missing,
@@ -477,6 +481,8 @@ struct Settings {
     support_email: String,
     /// `ADDONFORGE_TAB=browse|settings` opens on that tab (screenshots, testing).
     start_tab: Option<String>,
+    /// ForeverSVFix is set up on this install (see `wow::svfix_present`).
+    svfix: bool,
 }
 
 #[tauri::command]
@@ -501,6 +507,7 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         repo_url: REPO_URL.into(),
         support_email: SUPPORT_EMAIL.into(),
         start_tab: std::env::var("ADDONFORGE_TAB").ok().filter(|t| !t.is_empty()),
+        svfix: st.install_path.as_deref().map(|p| wow::svfix_present(Path::new(p))).unwrap_or(false),
     })
 }
 

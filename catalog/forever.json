@@ -1,6 +1,6 @@
 {
   "flavor": "forever",
-  "updated": "2026-09-24",
+  "updated": "2026-10-01",
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives.",
   "addons": [
     {
@@ -831,9 +831,10 @@
     {
       "id": "svshim",
       "name": "SVShim (SavedVariables shim)",
-      "desc": "Forever beta workaround for saved variables not loading.",
+      "desc": "Forever beta workaround for saved variables not loading. Link only: its download includes a script file, which AddonForge never installs.",
+      "notice": "Beta workaround. Remove it once Blizzard fixes saved variables; this line will say when.",
       "category": "Utility",
-      "github": "kylef000/wow-forever-svshim",
+      "url": "https://github.com/kylef000/wow-forever-svshim",
       "folders": [
         "!!SVShim"
       ],

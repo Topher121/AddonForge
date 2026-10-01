@@ -243,6 +243,31 @@ pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<V
 mod tests {
     use super::*;
 
+    /// ForeverSVFix puts a directory link inside addon folders that points at
+    /// the user's SavedVariables. Replacing or cleaning up an addon folder must
+    /// remove the link, never what it points to.
+    #[test]
+    #[cfg(windows)]
+    fn removing_a_folder_never_follows_a_junction() {
+        let root = std::env::temp_dir().join(format!("af-junction-{}", unique()));
+        let saved = root.join("WTF").join("SavedVariables");
+        fs::create_dir_all(&saved).unwrap();
+        fs::write(saved.join("Addon.lua"), "keep me").unwrap();
+        let addon = root.join("AddOns").join("Addon");
+        fs::create_dir_all(&addon).unwrap();
+        let link = addon.join("ForeverSVFixData");
+        let made = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J", &link.to_string_lossy(), &saved.to_string_lossy()])
+            .output()
+            .unwrap();
+        assert!(made.status.success(), "mklink failed: {}", String::from_utf8_lossy(&made.stderr));
+        assert!(link.join("Addon.lua").exists(), "junction should expose the file");
+        fs::remove_dir_all(&addon).unwrap();
+        assert!(!addon.exists());
+        assert!(saved.join("Addon.lua").exists(), "the linked SavedVariables file must survive");
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn safety_scan_refuses_executables() {
         let root = std::env::temp_dir().join(format!("af-safety-{}", unique()));
