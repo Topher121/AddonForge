@@ -23,7 +23,7 @@ const ids = new Set();
 const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever", "icon"]);
+const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever", "icon", "notice"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
   const where = `addons[${i}]${a && a.id ? ` (${a.id})` : ""}`;
@@ -45,6 +45,7 @@ for (const [i, a] of (cat.addons || []).entries()) {
   if (a.tukui !== undefined && typeof a.tukui !== "string") problems.push(`${where}: "tukui" must be a slug`);
   if (a.asset_hint !== undefined && typeof a.asset_hint !== "string") problems.push(`${where}: "asset_hint" must be a string`);
   if (a.url !== undefined && !/^https?:\/\//.test(a.url)) problems.push(`${where}: "url" must start with http(s)://`);
+  if (a.notice !== undefined && (typeof a.notice !== "string" || a.notice.length > 160)) problems.push(`${where}: "notice" must be a short string (160 chars max)`);
   if (a.forever !== undefined && a.forever !== null && typeof a.forever !== "boolean") problems.push(`${where}: "forever" must be true, false or null`);
   if (!Array.isArray(a.folders) || a.folders.length === 0 || !a.folders.every((f) => typeof f === "string" && f.trim() && !/[\\/]/.test(f))) {
     problems.push(`${where}: "folders" must list at least one AddOns folder name (no slashes)`);

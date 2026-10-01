@@ -166,6 +166,21 @@ API: base https://api.curseforge.com, header x-api-key, WoW is one game with
 gameVersionTypeId per flavour (517 = retail); find Forever's id with
 GET /v1/games/{id}/version-types once the key exists.
 
+## Catalogue notices + ForeverSVFix (build 14, 2026-10-01, closes issue #1)
+- `notice` (optional, <=160 chars) on a catalogue entry is shown as an amber
+  line on that addon's installed row. Flip the text in forever.json to tell
+  every user something (e.g. "no longer needed, remove it"); no app release.
+  SVShim carries one: when Blizzard fixes SavedVariables, change it to say so.
+- SVShim is LINK-ONLY: its zip ships `Start-SVShim.cmd`, which the zip
+  safety rule refuses. Never add a github source back to it.
+- ForeverSVFix (the exe tool, not an addon): detected by `WTF\ForeverSVFix\`
+  or a `ForeverSVFixData` link inside any addon folder (`wow::svfix_present`,
+  `settings.svfix`). My addons shows a standing amber line and every install /
+  update toast ends with "run Apply / Refresh before launching WoW", because
+  replacing an addon folder drops its patched TOC + link. Unit test proves
+  `remove_dir_all` never follows a junction (users' SavedVariables are safe).
+- Link-only catalogue entries now get their `url` as the row link.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge

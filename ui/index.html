@@ -40,12 +40,13 @@
       <button id="btn-update-all" class="btn primary" disabled>Update all</button>
     </div>
     <div class="strip">
-      <span><b id="stat-total">0</b> addons · <b id="stat-updates">0</b> updates available</span>
+      <span><b id="stat-total">0</b> <span id="stat-total-word">addons</span> · <b id="stat-updates">0</b> <span id="stat-updates-word">updates</span> available</span>
       <span class="attention-count"><b id="stat-attention">0</b> need attention</span>
       <span id="summary" class="sr-only" role="status"></span>
       <span class="grow"></span><label class="chk"><input type="checkbox" id="show-ignored"> Show ignored</label>
       <span id="last-checked">Not checked yet</span>
     </div>
+    <div id="svfix-note" class="tool-note hidden">ForeverSVFix is set up on this install. After installing or updating an addon, run Apply / Refresh in ForeverSVFix before you launch WoW, or that addon's settings won't load.</div>
     <div class="addon-table">
       <div class="thead cols-installed" aria-hidden="true">
         <span>Addon</span><span>Installed</span><span>Available</span><span>Source</span><span>Status</span><span></span>
@@ -89,7 +90,7 @@
         <p><b>Turning them on.</b> Install from here, then start WoW. On the character-select screen there is an <b>AddOns</b> button in the corner: tick the ones you want and untick any you don't. Already in game? Type <code>/reload</code> in chat after installing to load them.</p>
         <p><b>"Forever" builds.</b> Forever uses a newer interface than Classic Era, so addons need a version made for it. AddonForge tells you which ones have one. An addon marked "not for Forever" may still load but can error or show nothing.</p>
         <p><b>Updates.</b> Open AddonForge now and then, or leave it to check when it starts. Authors publish a new version, you press Update, done. Pin an addon if you want to hold it at a version you like.</p>
-        <p><b>Beta note.</b> The Forever beta has a bug where addon settings sometimes don't load on the next login. That is the game, not the addon. Some people use an addon called SVShim from the catalogue as a workaround until Blizzard fixes it.</p>
+        <p><b>Beta note.</b> The Forever beta has a bug where addon settings sometimes don't load on the next login. That is the game, not the addon. Some people use an addon called SVShim as a workaround until Blizzard fixes it; it is linked from the catalogue, and AddonForge will tell you when it is time to remove it.</p>
       </div>
     </details>
     <div class="section-title">Starter packs <span class="hint inline">Hand-picked sets. Install a whole pack, or click an addon to read about it.</span></div>
