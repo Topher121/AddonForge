@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build --no-bundle",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "security-check": "node scripts/security-check.mjs",
+    "check": "node scripts/security-check.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
