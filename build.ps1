@@ -58,6 +58,9 @@ if ($DeliverOnly) {
 } else {
 Push-Location $tauri
 try {
+    # Security gate (studio rule, Chris 2026-10-01): refuses to build if any protection is weakened.
+    node (Join-Path $root "scripts\security-check.mjs")
+    if ($LASTEXITCODE -ne 0) { throw "SECURITY CHECK FAILED - not building. Fix the config; never weaken a protection to get a build out." }
     if (-not $SkipTests) {
         cargo test | Select-Object -Last 3
         if ($LASTEXITCODE -ne 0) { throw "cargo test failed - not building" }

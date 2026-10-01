@@ -192,8 +192,14 @@ processes, GPU and network-service processes gone. WebView2 is the floor; going 
 instead of a webview (big rewrite, not planned). Measure: Get-CimInstance
 Win32_Process filtered on the exe pid + msedgewebview2 whose CommandLine
 contains "addonforge", sum PrivateMemorySize64 (snippet in the 2026-09-22
-session). NOTE: `additionalBrowserArgs` REPLACES Tauri's defaults, so the
-`msWebOOUI,msPdfOOUI,msSmartScreenProtection` disable-features must stay.
+session). SECURITY (Chris 2026-10-01, studio rule — see ~/.claude/CLAUDE.md): the flags that
+disabled browser protections (`msSmartScreenProtection`, phishing detection, component
+updates, background networking) were REMOVED in build 15 and a strict CSP added in
+tauri.conf.json (self only, `img-src data:` for the base64 icons). `scripts/security-check.mjs`
+gates build.ps1 and `npm run check`: any protection-weakening flag, a missing/weak CSP, inline
+styles/scripts in ui/, or anything touching Defender fails the build. Never add them back for
+memory; the remaining flags (gpu, renderer limit, in-process network service, no extensions /
+crash reporter / sync / speech) are the memory savers and are not protections.
 
 ## Installer (added 2026-09-22, build 6)
 `npx tauri build` (no `--no-bundle`) also produces an NSIS installer

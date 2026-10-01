@@ -16,16 +16,30 @@
         "minWidth": 760,
         "minHeight": 480,
         "center": true,
-        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection,AudioServiceOutOfProcess,SpareRendererForSitePerProcess --enable-features=NetworkServiceInProcess2 --disable-gpu --in-process-gpu --renderer-process-limit=1 --disable-extensions --disable-background-networking --disable-component-update --disable-breakpad --disable-crash-reporter --no-first-run --disable-sync --disable-speech-api --disable-domain-reliability --disable-client-side-phishing-detection"
+        "additionalBrowserArgs": "--disable-gpu --in-process-gpu --renderer-process-limit=1 --enable-features=NetworkServiceInProcess2 --disable-extensions --disable-breakpad --disable-crash-reporter --no-first-run --disable-sync --disable-speech-api --disable-domain-reliability"
       }
     ],
     "security": {
-      "csp": null
+      "csp": {
+        "default-src": "'self'",
+        "script-src": "'self'",
+        "style-src": "'self'",
+        "img-src": "'self' data:",
+        "font-src": "'self'",
+        "connect-src": "'self' ipc: http://ipc.localhost",
+        "media-src": "'self'",
+        "object-src": "'none'",
+        "base-uri": "'self'",
+        "form-action": "'self'",
+        "frame-ancestors": "'none'"
+      }
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "publisher": "Pocket Forge Studios",
     "windows": {
       "nsis": {
