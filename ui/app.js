@@ -38,6 +38,10 @@ async function loadIcons(kind, ids) {
     document.querySelectorAll(`[data-ico="${CSS.escape(kind + ":" + id)}"]`).forEach((el) => { el.innerHTML = `<img src="${src}" alt="">`; });
   }
 }
+// ForeverSVFix patches addon folders; a fresh folder needs its Apply / Refresh again.
+function svfixReminder(msg) {
+  return settings?.svfix ? `${msg}. ForeverSVFix: run Apply / Refresh before launching WoW` : msg;
+}
 function fmtCount(n) {
   if (n == null) return "";
   if (n >= 1e6) return (n / 1e6).toFixed(n >= 1e7 ? 0 : 1).replace(/\.0$/, "") + "M";
@@ -168,7 +172,10 @@ function renderInstalled() {
   const list = $("installed-list");
   const rows = visiblePackages();
   $("stat-total").textContent = packages.length;
-  $("stat-updates").textContent = packages.filter((p) => p.status === "update" && !p.ignored).length;
+  $("stat-total-word").textContent = packages.length === 1 ? "addon" : "addons";
+  const updatesDue = packages.filter((p) => p.status === "update" && !p.ignored).length;
+  $("stat-updates").textContent = updatesDue;
+  $("stat-updates-word").textContent = updatesDue === 1 ? "update" : "updates";
   $("stat-attention").textContent = packages.filter((p) => !p.ignored && needsAttention(p)).length;
   const eligible = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored).length;
   $("btn-update-all").textContent = eligible ? `Update all (${eligible})` : "Update all";
@@ -194,6 +201,7 @@ function renderInstalled() {
           const canUpdate = p.source && p.status !== "no-key";
           const btnLabel = p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
           const noteCls = p.status === "error" ? "note err" : "note";
+          const notice = p.notice ? `<div class="note warn">${esc(p.notice)}</div>` : "";
           const deps = p.missing_deps.length
             ? `<div class="note warn">Needs: ${p.missing_deps
                 .map((d) => (d.catalog_id ? `<b>${esc(d.name || d.folder)}</b> <button class="mini" data-act="dep" data-id="${esc(d.catalog_id)}">install</button>` : `<b>${esc(d.folder)}</b> <i>(not in catalogue)</i>`))
@@ -217,6 +225,7 @@ function renderInstalled() {
           </div></details>
         </div>
         ${p.note ? `<div class="${noteCls}">${esc(p.note)}</div>` : ""}
+        ${notice}
         ${deps}
       </div>`;
         })
@@ -330,7 +339,7 @@ async function updateOne(p, allowNonForever = false) {
     const fresh = await invoke("update_package", { key: p.key, allowNonForever });
     const i = packages.findIndex((x) => x.key === p.key);
     if (i >= 0) packages[i] = fresh;
-    toast(`${fresh.name} is now ${fresh.installed_version || "installed"}`);
+    toast(svfixReminder(`${fresh.name} is now ${fresh.installed_version || "installed"}`));
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
       p.status = "update";
@@ -623,7 +632,7 @@ async function installCatalog(entry, allowNonForever) {
   btnState(entry.id, true);
   try {
     const p = await invoke("install_catalog", { id: entry.id, allowNonForever });
-    toast(`Installed ${p.name} ${p.installed_version || ""}`);
+    toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     entry.installed = true;
     for (const b of bundles) for (const a of b.addons) if (a.id === entry.id) a.installed = true;
     renderBundles();
@@ -656,7 +665,7 @@ async function installGithub(allowNonForever = false) {
   btn.innerHTML = '<span class="spinner"></span> Installing';
   try {
     const p = await invoke("install_github", { repo, allowNonForever });
-    toast(`Installed ${p.name} ${p.installed_version || ""}`);
+    toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     $("gh-repo").value = "";
     await rescan(true);
     loadCatalog(false);
@@ -700,6 +709,7 @@ async function loadSettings() {
     ? "Game folder connected"
     : "No game folder selected — choose one in Settings";
   $("install-line").classList.toggle("connected", !!settings.install);
+  $("svfix-note").classList.toggle("hidden", !settings.svfix);
   $("footer-open-folder").disabled = !settings.install;
 }
 

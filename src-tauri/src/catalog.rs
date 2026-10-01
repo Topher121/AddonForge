@@ -52,6 +52,10 @@ pub struct CatalogEntry {
     /// Optional https icon for the Browse list (else the GitHub avatar is used).
     #[serde(default)]
     pub icon: Option<String>,
+    /// A short line shown on the installed row, e.g. "beta workaround, remove
+    /// once Blizzard fixes X". Changing it is a catalogue edit, no release needed.
+    #[serde(default)]
+    pub notice: Option<String>,
 }
 
 /// A hand-picked set of addons shown as "Starter picks" in Browse.

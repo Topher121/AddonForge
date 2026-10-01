@@ -42,6 +42,24 @@ fn read_flavor_info(product_dir: &Path) -> Option<String> {
     text.lines().nth(1).map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
+/// True when ForeverSVFix (a beta SavedVariables workaround tool) is set up
+/// on this install: it keeps `WTF\ForeverSVFix\` and puts a `ForeverSVFixData`
+/// link inside each addon it patched. Updating an addon replaces its folder,
+/// so the user has to run Apply / Refresh in that tool again.
+pub fn svfix_present(product_dir: &Path) -> bool {
+    if product_dir.join("WTF").join("ForeverSVFix").is_dir() {
+        return true;
+    }
+    let addons = product_dir.join("Interface").join("AddOns");
+    match std::fs::read_dir(addons) {
+        Ok(entries) => entries
+            .flatten()
+            .take(2000)
+            .any(|e| e.path().join("ForeverSVFixData").exists()),
+        Err(_) => false,
+    }
+}
+
 /// Describe a product folder the user picked or we discovered.
 pub fn describe_install(product_dir: &Path) -> Option<WowInstall> {
     if !product_dir.join("Interface").join("AddOns").is_dir()
@@ -322,6 +340,20 @@ pub fn scan_addons(install: &Path) -> Vec<AddonFolder> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn svfix_detected_by_wtf_marker_or_addon_link() {
+        let root = std::env::temp_dir().join(format!("af-svfix-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("Interface").join("AddOns").join("Plain")).unwrap();
+        assert!(!svfix_present(&root));
+        std::fs::create_dir_all(root.join("Interface").join("AddOns").join("Plain").join("ForeverSVFixData")).unwrap();
+        assert!(svfix_present(&root));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("WTF").join("ForeverSVFix")).unwrap();
+        assert!(svfix_present(&root));
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn strips_colour_codes() {

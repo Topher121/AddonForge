@@ -139,6 +139,7 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--line
 .note { grid-column: 1 / -1; color: var(--dim); font-size: 12px; padding: 2px 0 2px; overflow-wrap: anywhere; }
 .note.err { color: var(--bad); }
 .note.warn { color: var(--warn); }
+.tool-note { color: var(--warn); font-size: 12px; padding: 6px 0 10px; line-height: 1.5; max-width: 900px; }
 .mini { background: none; border: 1px solid var(--line-2); color: var(--text); border-radius: 3px; padding: 0 6px; font-size: 11px; line-height: 16px; }
 .mini:hover { border-color: var(--accent); }
 
