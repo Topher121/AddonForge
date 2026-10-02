@@ -119,6 +119,16 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--line
 .guide-body p { margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.55; }
 .guide-body b { color: var(--text); }
 .guide-body code { color: var(--accent-2); }
+.featured { padding-top: 12px; }
+.featured .section-title { margin-top: 0; }
+.featured-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.feat { display: flex; gap: 10px; align-items: flex-start; border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; background: var(--bg-2); min-width: 0; }
+.feat .ico { width: 34px; height: 34px; }
+.feat-body { min-width: 0; flex: 1; }
+.feat-name { font-weight: 600; cursor: pointer; }
+.feat-name:hover { color: var(--accent-2); }
+.feat-blurb { color: var(--muted); font-size: 12px; line-height: 1.45; margin: 2px 0 6px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.feat-meta { color: var(--dim); font-size: 11px; }
 .bundles { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 8px; }
 .bundle { border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; background: var(--bg-2); display: flex; flex-direction: column; gap: 6px; }
 .bundle-head { display: flex; align-items: center; gap: 8px; }

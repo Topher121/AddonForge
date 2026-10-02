@@ -181,6 +181,22 @@ GET /v1/games/{id}/version-types once the key exists.
   `remove_dir_all` never follows a junction (users' SavedVariables are safe).
 - Link-only catalogue entries now get their `url` as the row link.
 
+## Featured strip (build 15, 2026-10-02, the owner's idea)
+- Top of Find addons: up to four addons. Source, in order: catalogue
+  `featured` entries whose from/to (YYYY-MM-DD, inclusive) cover today;
+  else entries with `added` in the last 30 days ("New in the catalogue");
+  else the four most recently updated per stats.json. `pickFeatured(today)`
+  in app.js, unit-tested; Rust just returns the raw list (`catalog_featured`).
+- Authors apply with `.github/ISSUE_TEMPLATE/feature.yml` (must own the
+  repo, addon must already be listed, one sentence, 140 chars, a Monday).
+  The owner approves; the entry goes in by PR. FREE, no paid placement, ever:
+  that sentence is in the app, the README and CONTRIBUTING.
+- Set `added` on every new catalogue entry from now on.
+- Dev: `ADDONFORGE_STATE_DIR=<dir>` gives a throwaway settings profile.
+  The APPDATA env var does NOT redirect it (dirs crate uses the shell API);
+  on 2026-10-02 a `--cli use` test pointed the owner's real state at a
+  temp folder because of that. Always set ADDONFORGE_STATE_DIR for tests.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge
