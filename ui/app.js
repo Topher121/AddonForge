@@ -13,6 +13,7 @@ let settings = null;
 let selfUpdate = null;
 let activeFilter = "all";
 let bundles = [];
+let featuredRaw = []; // catalogue "featured" list; what applies today is worked out in renderFeatured
 const icons = new Map(); // "p:<package key>" / "c:<catalogue id>" -> data URL, or null when there is none
 const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.missing_deps.length > 0 || !p.supports_forever;
 
@@ -463,6 +464,7 @@ async function loadCatalog(refresh) {
     renderCatalog();
     loadIcons("c", catalog.map((e) => e.id));
     loadBundles();
+    loadFeatured();
   } catch (err) {
     toast(String(err), true);
   } finally {
@@ -547,6 +549,60 @@ $("detail-install").onclick = async () => {
   await installCatalog(e, false);
   renderBundles();
 };
+
+// ---------------------------------------------------------------- featured
+async function loadFeatured() {
+  try {
+    featuredRaw = (await invoke("catalog_featured")) || [];
+  } catch (_) {
+    featuredRaw = [];
+  }
+  renderFeatured();
+}
+
+// Today's spotlight, else what's new, else what moved recently. Never an empty strip.
+function pickFeatured(today = new Date().toISOString().slice(0, 10)) {
+  const byId = new Map(catalog.map((e) => [e.id, e]));
+  const live = featuredRaw.filter((f) => f.from <= today && today <= f.to && byId.has(f.id)).slice(0, 4);
+  if (live.length) return { title: "Featured this week", hint: "Chosen by their authors.", items: live.map((f) => ({ ...byId.get(f.id), blurb: f.blurb })) };
+  const cutoff = new Date(Date.parse(today) - 30 * 86400000).toISOString().slice(0, 10);
+  const fresh = catalog.filter((e) => e.added && e.added >= cutoff).sort((a, b) => b.added.localeCompare(a.added)).slice(0, 4);
+  if (fresh.length) return { title: "New in the catalogue", hint: "Added in the last month.", items: fresh };
+  const moved = catalog.filter((e) => e.updated_at).sort((a, b) => b.updated_at.localeCompare(a.updated_at)).slice(0, 4);
+  return { title: "Recently updated", hint: "Authors who shipped something lately.", items: moved };
+}
+
+function renderFeatured() {
+  const box = $("featured");
+  if (!catalog.length) { box.classList.add("hidden"); return; }
+  const pick = pickFeatured();
+  if (!pick.items.length) { box.classList.add("hidden"); return; }
+  $("featured-title").textContent = pick.title;
+  $("featured-hint").textContent = pick.hint;
+  $("featured-list").innerHTML = pick.items
+    .map((e) => {
+      const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
+      const meta = [e.category, e.downloads != null ? `${fmtCount(e.downloads)} downloads` : "", e.updated_at ? ago(e.updated_at) : ""].filter(Boolean).join(" · ");
+      return `<div class="feat" data-id="${esc(e.id)}">${iconTile("c", e.id, e.name)}<div class="feat-body">
+        <div class="feat-name" data-detail="${esc(e.id)}">${esc(e.name)}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</div>
+        <div class="feat-blurb" title="${esc(e.blurb || e.desc || "")}">${esc(e.blurb || e.desc || "")}</div>
+        <div class="feat-meta">${esc(meta)}</div></div>
+        ${canInstall ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : ""}
+      </div>`;
+    })
+    .join("");
+  box.classList.remove("hidden");
+  setBusy(busy);
+}
+
+$("featured-list").addEventListener("click", async (e) => {
+  const d = e.target.closest("[data-detail]");
+  if (d) return openDetail(d.dataset.detail);
+  const btn = e.target.closest("button[data-act=install]");
+  if (!btn || busy) return;
+  const entry = catalog.find((x) => x.id === btn.closest(".feat").dataset.id);
+  if (entry) await installCatalog(entry, false);
+});
 
 // ---------------------------------------------------------------- starter packs
 async function loadBundles() {
@@ -637,6 +693,7 @@ async function installCatalog(entry, allowNonForever) {
     for (const b of bundles) for (const a of b.addons) if (a.id === entry.id) a.installed = true;
     renderBundles();
     renderCatalog();
+    renderFeatured();
     await rescan(true);
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {

@@ -1,0 +1,37 @@
+name: Feature my addon
+description: Authors only. Ask for your addon to be shown in "Featured this week" in AddonForge. Free, always.
+title: "Feature: "
+labels: ["featured"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Featured addons appear at the top of Find addons for the week you choose, with one sentence from you. It is free and there is no paid option. You must be the addon's author (the owner of the repo or project it publishes from), and the addon must already be in the catalogue. Up to four addons are featured in any week, first come first served.
+  - type: input
+    id: addon
+    attributes:
+      label: Your addon
+      description: Its name, and its catalogue id if you know it (the "id" field in catalog/forever.json).
+    validations:
+      required: true
+  - type: input
+    id: proof
+    attributes:
+      label: Where you publish it
+      description: Link to the repo or project page you own. We check that it matches the catalogue entry.
+    validations:
+      required: true
+  - type: input
+    id: blurb
+    attributes:
+      label: One sentence about it (140 characters max)
+      description: Shown under the name. Plain words, no caps lock, no "best".
+    validations:
+      required: true
+  - type: input
+    id: week
+    attributes:
+      label: Which week?
+      description: A Monday date, e.g. 2026-11-09. Say "next free" if you don't mind.
+    validations:
+      required: true

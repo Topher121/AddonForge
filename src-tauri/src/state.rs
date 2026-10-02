@@ -53,7 +53,12 @@ pub fn now_secs() -> u64 {
 }
 
 impl AppState {
+    /// `%APPDATA%\AddonForge`. `ADDONFORGE_STATE_DIR` overrides it so tests and
+    /// screenshots can use a throwaway profile without touching the real one.
     pub fn dir() -> PathBuf {
+        if let Some(dir) = std::env::var_os("ADDONFORGE_STATE_DIR").filter(|v| !v.is_empty()) {
+            return PathBuf::from(dir);
+        }
         dirs::config_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join("AddonForge")

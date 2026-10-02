@@ -23,7 +23,8 @@ const ids = new Set();
 const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
-const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever", "icon", "notice"]);
+const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "url", "forever", "icon", "notice", "added"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
   const where = `addons[${i}]${a && a.id ? ` (${a.id})` : ""}`;
@@ -46,6 +47,7 @@ for (const [i, a] of (cat.addons || []).entries()) {
   if (a.asset_hint !== undefined && typeof a.asset_hint !== "string") problems.push(`${where}: "asset_hint" must be a string`);
   if (a.url !== undefined && !/^https?:\/\//.test(a.url)) problems.push(`${where}: "url" must start with http(s)://`);
   if (a.notice !== undefined && (typeof a.notice !== "string" || a.notice.length > 160)) problems.push(`${where}: "notice" must be a short string (160 chars max)`);
+  if (a.added !== undefined && !dateRe.test(a.added)) problems.push(`${where}: "added" must be YYYY-MM-DD`);
   if (a.forever !== undefined && a.forever !== null && typeof a.forever !== "boolean") problems.push(`${where}: "forever" must be true, false or null`);
   if (!Array.isArray(a.folders) || a.folders.length === 0 || !a.folders.every((f) => typeof f === "string" && f.trim() && !/[\\/]/.test(f))) {
     problems.push(`${where}: "folders" must list at least one AddOns folder name (no slashes)`);
@@ -68,6 +70,15 @@ for (const [i, b] of (cat.bundles || []).entries()) {
   if (typeof b.name !== "string" || !b.name.trim()) problems.push(`${where}: "name" is required`);
   if (!Array.isArray(b.addons) || !b.addons.length) problems.push(`${where}: "addons" must list catalogue ids`);
   else for (const id of b.addons) if (!known.has(id)) problems.push(`${where}: unknown addon id "${id}"`);
+}
+
+// featured: free author spotlights with a date range
+for (const [i, f] of (cat.featured || []).entries()) {
+  const where = `featured[${i}]${f && f.id ? ` (${f.id})` : ""}`;
+  if (!f || typeof f.id !== "string" || !known.has(f.id)) problems.push(`${where}: unknown addon id`);
+  if (!dateRe.test(f.from || "") || !dateRe.test(f.to || "")) problems.push(`${where}: "from" and "to" must be YYYY-MM-DD`);
+  else if (f.to < f.from) problems.push(`${where}: "to" is before "from"`);
+  if (f.blurb !== undefined && (typeof f.blurb !== "string" || f.blurb.length > 140)) problems.push(`${where}: "blurb" must be one sentence (140 chars max)`);
 }
 
 if (problems.length) {
