@@ -1,7 +1,7 @@
 {
   "flavor": "forever",
-  "updated": "2026-10-01",
-  "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives.",
+  "updated": "2026-10-02",
+  "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, feeds \"New in the catalogue\"). Top-level: bundles (starter packs) and featured (free author spotlights: id, from, to, blurb; see CONTRIBUTING.md).",
   "addons": [
     {
       "id": "bigwigs",
@@ -1336,7 +1336,8 @@
         "!BugGrabber"
       ],
       "url": "https://addons.wago.io/addons/buggrabber",
-      "forever": true
+      "forever": true,
+      "added": "2026-09-24"
     },
     {
       "id": "prat",
@@ -1349,7 +1350,8 @@
         "Prat-3.0",
         "Prat-3.0_Libraries"
       ],
-      "url": "https://github.com/Legacy-of-Sylvanaar/prat-3-0"
+      "url": "https://github.com/Legacy-of-Sylvanaar/prat-3-0",
+      "added": "2026-09-24"
     },
     {
       "id": "blizzmove",
@@ -1360,7 +1362,8 @@
       "folders": [
         "BlizzMove"
       ],
-      "url": "https://github.com/Kiatra/BlizzMove"
+      "url": "https://github.com/Kiatra/BlizzMove",
+      "added": "2026-09-24"
     }
   ],
   "bundles": [
@@ -1450,5 +1453,6 @@
       ],
       "note": ""
     }
-  ]
+  ],
+  "featured": []
 }

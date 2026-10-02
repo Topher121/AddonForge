@@ -49,6 +49,14 @@ assert.match(element('installed-list').innerHTML, /Show all addons/);
 element('installed-filter').value = '';
 element('show-ignored').checked = true;
 assert.equal(run('visiblePackages().length'), 4);
+// Featured strip: today's spotlight, else what is new, else what moved. Never empty.
+run(`catalog = [{id:'a',name:'A',added:'2026-10-01'},{id:'b',name:'B',updated_at:'2026-09-01T00:00:00Z'}];
+  featuredRaw = [{id:'b',from:'2026-10-01',to:'2026-10-07',blurb:'hi'}];`);
+assert.equal(run("pickFeatured('2026-10-03').title"), 'Featured this week');
+assert.equal(run("pickFeatured('2026-10-03').items[0].blurb"), 'hi');
+assert.equal(run("pickFeatured('2026-10-09').title"), 'New in the catalogue');
+assert.equal(run("pickFeatured('2026-12-01').title"), 'Recently updated');
+run(`catalog = []; featuredRaw = [];`);
 run(`packages = []; renderInstalled()`);
 assert.equal(String(element('stat-updates').textContent), '0');
 assert.match(element('installed-list').innerHTML, /Discover addons/);
