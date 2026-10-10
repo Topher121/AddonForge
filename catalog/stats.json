@@ -1,108 +1,108 @@
 {
- "updated": "2026-10-09",
+ "updated": "2026-10-10",
  "entries": {
   "bigwigs": {
-   "downloads": 2597389,
+   "downloads": 2597635,
    "updated_at": "2026-09-30T11:08:20Z",
    "source": "github"
   },
   "dbm": {
-   "downloads": 1184120,
+   "downloads": 1184362,
    "updated_at": "2026-09-29T22:59:44Z",
    "source": "github"
   },
   "dbm-dungeons": {
-   "downloads": 658711,
+   "downloads": 658865,
    "updated_at": "2026-09-20T20:35:39Z",
    "source": "github"
   },
   "dbm-vanilla": {
-   "downloads": 260445,
+   "downloads": 260506,
    "updated_at": "2026-09-20T20:35:01Z",
    "source": "github"
   },
   "dbm-sound-events-pack": {
-   "downloads": 76374,
+   "downloads": 76400,
    "updated_at": "2026-09-19T23:05:20Z",
    "source": "github"
   },
   "plater": {
-   "downloads": 894943,
+   "downloads": 895115,
    "updated_at": "2026-10-09T09:26:52Z",
    "source": "github"
   },
   "better-blizz-plates": {
-   "downloads": 1929,
+   "downloads": 1942,
    "updated_at": "2026-10-05T21:17:08Z",
    "source": "github"
   },
   "better-blizz-frames": {
-   "downloads": 2525,
-   "updated_at": "2026-10-05T15:59:17Z",
+   "downloads": 2579,
+   "updated_at": "2026-10-09T14:21:35Z",
    "source": "github"
   },
   "better-blizz-addons": {
-   "downloads": 42,
+   "downloads": 46,
    "updated_at": "2026-09-19T22:43:36Z",
    "source": "github"
   },
   "restedxp": {
-   "downloads": 1723650,
-   "updated_at": "2026-10-09T03:26:46Z",
+   "downloads": 1725108,
+   "updated_at": "2026-10-10T10:06:32Z",
    "source": "github"
   },
   "classicui-forever": {
-   "downloads": 409,
-   "updated_at": "2026-10-09T05:51:26Z",
+   "downloads": 412,
+   "updated_at": "2026-10-10T10:00:11Z",
    "source": "github"
   },
   "easyfind": {
-   "downloads": 117,
+   "downloads": 119,
    "updated_at": "2026-09-18T21:54:23Z",
    "source": "github"
   },
   "seal-timers-forever": {
-   "downloads": 19,
+   "downloads": 20,
    "updated_at": "2026-09-30T19:32:39Z",
    "source": "github"
   },
   "wow-translator": {
-   "downloads": 190,
+   "downloads": 195,
    "updated_at": "2026-10-09T09:38:39Z",
    "source": "github"
   },
   "betterbags": {
-   "downloads": 194227,
+   "downloads": 194289,
    "updated_at": "2026-10-02T01:12:16Z",
    "source": "github"
   },
   "betterbags-teleports": {
-   "downloads": 7971,
+   "downloads": 7972,
    "updated_at": "2026-09-21T19:05:31Z",
    "source": "github"
   },
   "betterbags-bound": {
-   "downloads": 32061,
+   "downloads": 32091,
    "updated_at": "2026-09-14T21:21:33Z",
    "source": "github"
   },
   "bagsync": {
-   "downloads": 151252,
+   "downloads": 151279,
    "updated_at": "2026-09-29T10:59:27Z",
    "source": "github"
   },
   "bankstack": {
-   "downloads": 44929,
+   "downloads": 44933,
    "updated_at": "2026-10-03T16:22:14Z",
    "source": "github"
   },
   "bugsack": {
-   "downloads": 802443,
+   "downloads": 802634,
    "updated_at": "2026-09-19T13:45:36Z",
    "source": "github"
   },
   "mute-sound-file": {
-   "downloads": 64364,
+   "downloads": 64368,
    "updated_at": "2026-09-19T17:57:40Z",
    "source": "github"
   },
@@ -112,17 +112,17 @@
    "source": "github"
   },
   "silverdragon": {
-   "downloads": 213789,
+   "downloads": 213855,
    "updated_at": "2026-10-04T14:37:56Z",
    "source": "github"
   },
   "simple-item-level": {
-   "downloads": 137661,
+   "downloads": 137671,
    "updated_at": "2026-10-05T21:45:27Z",
    "source": "github"
   },
   "immersion": {
-   "downloads": 138756,
+   "downloads": 138828,
    "updated_at": "2026-09-24T06:59:53Z",
    "source": "github"
   },
@@ -132,17 +132,17 @@
    "source": "github"
   },
   "all-the-things": {
-   "downloads": 710618,
+   "downloads": 711327,
    "updated_at": "2026-10-04T10:13:49Z",
    "source": "github"
   },
   "transmog-loot-helper": {
-   "downloads": 6340,
+   "downloads": 6359,
    "updated_at": "2026-10-04T21:46:55Z",
    "source": "github"
   },
   "equip-recommended-gear": {
-   "downloads": 3564,
+   "downloads": 3570,
    "updated_at": "2026-09-19T17:41:29Z",
    "source": "github"
   },
@@ -157,17 +157,17 @@
    "source": "github"
   },
   "move-any": {
-   "downloads": 54031,
-   "updated_at": "2026-10-08T18:59:26Z",
+   "downloads": 53979,
+   "updated_at": "2026-10-09T18:53:00Z",
    "source": "github"
   },
   "dark-mode": {
-   "downloads": 3203,
-   "updated_at": "2026-10-08T18:40:13Z",
+   "downloads": 3208,
+   "updated_at": "2026-10-09T11:41:27Z",
    "source": "github"
   },
   "improve-any": {
-   "downloads": 5849,
+   "downloads": 5854,
    "updated_at": "2026-10-08T18:39:46Z",
    "source": "github"
   },
@@ -177,37 +177,37 @@
    "source": "github"
   },
   "tank-helper": {
-   "downloads": 1580,
+   "downloads": 1581,
    "updated_at": "2026-10-08T21:36:02Z",
    "source": "github"
   },
   "world-map-pin": {
-   "downloads": 1075,
+   "downloads": 1078,
    "updated_at": "2026-10-08T18:38:55Z",
    "source": "github"
   },
   "edit-mode-expanded": {
-   "downloads": 46476,
+   "downloads": 46509,
    "updated_at": "2026-10-08T06:19:46Z",
    "source": "github"
   },
   "gathering-tracker": {
-   "downloads": 76223,
+   "downloads": 76237,
    "updated_at": "2026-09-18T01:58:11Z",
    "source": "github"
   },
   "rpg-loot-feed": {
-   "downloads": 2860,
+   "downloads": 2885,
    "updated_at": "2026-10-09T02:01:36Z",
    "source": "github"
   },
   "carbonite": {
-   "downloads": 14429,
+   "downloads": 14430,
    "updated_at": "2026-10-03T14:28:12Z",
    "source": "github"
   },
   "xanchat": {
-   "downloads": 1037,
+   "downloads": 1042,
    "updated_at": "2026-09-19T21:40:31Z",
    "source": "github"
   },
@@ -227,7 +227,7 @@
    "source": "github"
   },
   "xan-exp": {
-   "downloads": 686,
+   "downloads": 692,
    "updated_at": "2026-09-19T21:26:13Z",
    "source": "github"
   },
@@ -242,7 +242,7 @@
    "source": "github"
   },
   "blizz-hud-tweaks": {
-   "downloads": 24640,
+   "downloads": 24641,
    "updated_at": "2026-09-19T16:42:03Z",
    "source": "github"
   },
@@ -252,12 +252,12 @@
    "source": "github"
   },
   "pixel-perfect-ui-scale": {
-   "downloads": 43,
+   "downloads": 44,
    "updated_at": "2026-09-20T20:26:23Z",
    "source": "github"
   },
   "chattery": {
-   "downloads": 70,
+   "downloads": 75,
    "updated_at": "2026-09-21T03:50:15Z",
    "source": "github"
   },
@@ -267,7 +267,7 @@
    "source": "github"
   },
   "minimap-button-button": {
-   "downloads": 153348,
+   "downloads": 153365,
    "updated_at": "2026-09-27T10:49:28Z",
    "source": "github"
   },
@@ -277,8 +277,8 @@
    "source": "github"
   },
   "azeriteui5-junnez": {
-   "downloads": 326,
-   "updated_at": "2026-10-08T19:54:58Z",
+   "downloads": 498,
+   "updated_at": "2026-10-10T10:34:54Z",
    "source": "github"
   },
   "vital-frame": {
@@ -287,7 +287,7 @@
    "source": "github"
   },
   "waypoint-ui": {
-   "downloads": 127,
+   "downloads": 130,
    "updated_at": "2026-09-24T06:37:46Z",
    "source": "github"
   },
@@ -297,52 +297,52 @@
    "source": "github"
   },
   "auto-spell-ranks": {
-   "downloads": 11,
+   "downloads": 13,
    "updated_at": "2026-09-20T08:40:34Z",
    "source": "github"
   },
   "shaman-forever": {
-   "downloads": 220,
+   "downloads": 223,
    "updated_at": "2026-10-05T16:15:56Z",
    "source": "github"
   },
   "hiding-bar": {
-   "downloads": 6972,
+   "downloads": 6975,
    "updated_at": "2026-09-21T10:55:15Z",
    "source": "github"
   },
   "tellmewhen": {
-   "downloads": 380151,
+   "downloads": 380228,
    "updated_at": "2026-09-17T16:51:12Z",
    "source": "github"
   },
   "idtip": {
-   "downloads": 124000,
+   "downloads": 124024,
    "updated_at": "2026-08-12T10:35:04Z",
    "source": "github"
   },
   "molinari": {
-   "downloads": 61885,
+   "downloads": 61907,
    "updated_at": "2026-10-03T09:22:57Z",
    "source": "github"
   },
   "icehud": {
-   "downloads": 24308,
+   "downloads": 24314,
    "updated_at": "2026-09-06T19:22:19Z",
    "source": "github"
   },
   "breakables": {
-   "downloads": 4615,
+   "downloads": 4616,
    "updated_at": "2026-08-12T23:55:06Z",
    "source": "github"
   },
   "repair-broker": {
-   "downloads": 32082,
+   "downloads": 32084,
    "updated_at": "2026-08-12T23:55:40Z",
    "source": "github"
   },
   "character-notes": {
-   "downloads": 41713,
+   "downloads": 41740,
    "updated_at": "2026-10-02T02:41:29Z",
    "source": "github"
   },
@@ -352,7 +352,7 @@
    "source": "github"
   },
   "nice-damage": {
-   "downloads": 266,
+   "downloads": 289,
    "updated_at": "2026-09-18T19:47:51Z",
    "source": "github"
   },
@@ -362,13 +362,13 @@
    "source": "github"
   },
   "vendor-price-plus": {
-   "downloads": 33,
+   "downloads": 38,
    "updated_at": "2026-10-07T18:08:30Z",
    "source": "github"
   },
   "i-will-remember": {
-   "downloads": 84,
-   "updated_at": "2026-10-04T10:52:29Z",
+   "downloads": 86,
+   "updated_at": "2026-10-09T14:04:44Z",
    "source": "github"
   },
   "arc-lfg-filter": {
@@ -387,12 +387,12 @@
    "source": "github"
   },
   "make-room-classic": {
-   "downloads": 313,
+   "downloads": 316,
    "updated_at": "2026-09-20T16:44:11Z",
    "source": "github"
   },
   "can-opener": {
-   "downloads": 67,
+   "downloads": 70,
    "updated_at": "2026-09-20T21:03:05Z",
    "source": "github"
   },
@@ -412,7 +412,7 @@
    "source": "github"
   },
   "cooldown-alert": {
-   "downloads": 56,
+   "downloads": 58,
    "updated_at": "2026-10-01T20:45:55Z",
    "source": "github"
   },
@@ -432,12 +432,12 @@
    "source": "github"
   },
   "texture-atlas-viewer": {
-   "downloads": 124,
+   "downloads": 125,
    "updated_at": "2026-09-20T15:42:33Z",
    "source": "github"
   },
   "datamine": {
-   "downloads": 4774,
+   "downloads": 4775,
    "updated_at": "2026-09-21T03:50:18Z",
    "source": "github"
   },
@@ -447,17 +447,17 @@
    "source": "wowi"
   },
   "questie": {
-   "downloads": 6978040,
+   "downloads": 6979562,
    "updated_at": "2026-10-06T02:23:12Z",
    "source": "github"
   },
   "prat": {
-   "downloads": 218493,
+   "downloads": 218547,
    "updated_at": "2026-10-02T02:12:42Z",
    "source": "github"
   },
   "blizzmove": {
-   "downloads": 282382,
+   "downloads": 282430,
    "updated_at": "2026-09-27T20:18:44Z",
    "source": "github"
   }
