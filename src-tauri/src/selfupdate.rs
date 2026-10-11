@@ -184,12 +184,11 @@ pub fn finish_replace(old: &Path) {
     crate::loge!("self-update: could not remove old exe {}", old.display());
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(windows)))]
 mod tests {
     use super::*;
 
     #[test]
-    #[cfg(not(windows))]
     fn same_version_higher_build_is_not_newer_off_windows() {
         let same = Latest { version: version().into(), build: 99, ..Default::default() };
         assert!(!is_newer(&same));
