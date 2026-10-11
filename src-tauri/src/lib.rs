@@ -948,6 +948,7 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
 async fn open_addons_folder(app: State<'_, Shared>) -> Result<String, String> {
     let install = current_install(&app).await?;
     let dir = addons_dir(&install);
+    std::fs::create_dir_all(&dir).map_err(err)?;
     tauri_plugin_opener::open_path(&dir, None::<&str>).map_err(err)?;
     Ok(dir.to_string_lossy().to_string())
 }

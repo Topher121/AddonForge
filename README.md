@@ -71,8 +71,8 @@ installer both embed `src-tauri/icons/icon.ico`.
 ## macOS
 
 AddonForge also runs on macOS, built from source (no Mac release yet).
-WoW on macOS lives in `/Applications/World of Warcraft`; the app looks there, in
-`~/Applications` and on mounted volumes, or you can pick the folder yourself.
+WoW on macOS lives in `/Applications/World of Warcraft`; the app looks there and
+in `~/Applications`. Anywhere else (e.g. an external drive): pick the folder in Settings.
 Install the Xcode Command Line Tools (`xcode-select --install`), Rust and Node, then:
 
 ```
