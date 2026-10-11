@@ -88,6 +88,7 @@ pub fn describe_install(product_dir: &Path) -> Option<WowInstall> {
     })
 }
 
+#[cfg(windows)]
 const ROOT_PATTERNS: &[&str] = &[
     "Program Files (x86)\\World of Warcraft",
     "Program Files\\World of Warcraft",
@@ -97,24 +98,56 @@ const ROOT_PATTERNS: &[&str] = &[
     "Battle.net\\World of Warcraft",
 ];
 
-/// Scan the usual places for `World of Warcraft\_*_` product folders.
-pub fn find_installs() -> Vec<WowInstall> {
-    let mut found = Vec::new();
+/// Candidate `World of Warcraft` folders: every drive x ROOT_PATTERNS.
+#[cfg(windows)]
+fn root_dirs() -> Vec<PathBuf> {
+    let mut roots = Vec::new();
     for letter in b'C'..=b'Z' {
         let drive = format!("{}:\\", letter as char);
         if !Path::new(&drive).is_dir() {
             continue;
         }
         for pat in ROOT_PATTERNS {
-            let root = PathBuf::from(&drive).join(pat);
-            let Ok(rd) = fs::read_dir(&root) else { continue };
-            for entry in rd.flatten() {
-                let p = entry.path();
-                let name = entry.file_name().to_string_lossy().to_string();
-                if p.is_dir() && name.starts_with('_') && name.ends_with('_') {
-                    if let Some(i) = describe_install(&p) {
-                        found.push(i);
-                    }
+            roots.push(PathBuf::from(&drive).join(pat));
+        }
+    }
+    roots
+}
+
+/// Candidate `World of Warcraft` folders: /Applications, ~/Applications and
+/// the top level (or Applications folder) of every mounted volume.
+#[cfg(target_os = "macos")]
+fn root_dirs() -> Vec<PathBuf> {
+    let mut roots = vec![PathBuf::from("/Applications/World of Warcraft")];
+    if let Some(home) = dirs::home_dir() {
+        roots.push(home.join("Applications").join("World of Warcraft"));
+    }
+    if let Ok(rd) = fs::read_dir("/Volumes") {
+        for vol in rd.flatten() {
+            roots.push(vol.path().join("World of Warcraft"));
+            roots.push(vol.path().join("Applications").join("World of Warcraft"));
+        }
+    }
+    roots
+}
+
+/// Elsewhere: no guesses, the user picks the folder.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn root_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
+/// Scan the usual places for `World of Warcraft\_*_` product folders.
+pub fn find_installs() -> Vec<WowInstall> {
+    let mut found = Vec::new();
+    for root in root_dirs() {
+        let Ok(rd) = fs::read_dir(&root) else { continue };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+            if p.is_dir() && name.starts_with('_') && name.ends_with('_') {
+                if let Some(i) = describe_install(&p) {
+                    found.push(i);
                 }
             }
         }

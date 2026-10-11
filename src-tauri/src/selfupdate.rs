@@ -11,10 +11,16 @@
 //! touched (no installer, no registry, no service).
 
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(windows)]
+use std::path::PathBuf;
 
 pub const LATEST_URL: &str =
     "https://github.com/Topher121/AddonForge/releases/latest/download/latest.json";
+
+/// Where non-Windows users get sent to update by hand.
+#[cfg(not(windows))]
+pub const RELEASES_URL: &str = "https://github.com/Topher121/AddonForge/releases/latest";
 
 pub fn version() -> &'static str {
     env!("CARGO_PKG_VERSION")
@@ -90,6 +96,7 @@ pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> Self
 
 /// Is this exe the portable download (`AddonForge-v0.2.0-b5.exe`) rather
 /// than an installed copy (`AddonForge.exe` under the installer's folder)?
+#[cfg(windows)]
 fn is_portable(exe: &Path) -> bool {
     let name = exe.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
     name.starts_with("addonforge-v") && name.contains("-b") && name.ends_with(".exe")
@@ -103,6 +110,7 @@ fn is_portable(exe: &Path) -> bool {
 /// Installed: the running exe is renamed to `.old` and the new build takes
 /// its exact path, so Start-menu shortcuts and the uninstaller keep working;
 /// the new process deletes the `.old` file.
+#[cfg(windows)]
 pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<PathBuf> {
     let current = std::env::current_exe()?;
     let dir = current.parent().ok_or_else(|| anyhow::anyhow!("no exe dir"))?;

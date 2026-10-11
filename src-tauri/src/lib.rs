@@ -529,7 +529,7 @@ async fn find_installs(app: State<'_, Shared>) -> Result<Vec<WowInstall>, String
 async fn set_install_path(app: State<'_, Shared>, path: String) -> Result<WowInstall, String> {
     let p = PathBuf::from(path.trim());
     let info = wow::describe_install(&p)
-        .ok_or_else(|| "That folder doesn't look like a WoW product folder (expected e.g. ...\\_classic_beta_ with Interface\\AddOns inside)".to_string())?;
+        .ok_or_else(|| "That folder doesn't look like a WoW product folder (expected e.g. _classic_beta_ with Interface/AddOns inside)".to_string())?;
     let mut st = app.state.lock().await;
     st.install_path = Some(info.path.clone());
     st.save().map_err(err)?;
@@ -948,7 +948,7 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
 async fn open_addons_folder(app: State<'_, Shared>) -> Result<String, String> {
     let install = current_install(&app).await?;
     let dir = addons_dir(&install);
-    std::process::Command::new("explorer").arg(&dir).spawn().map_err(err)?;
+    tauri_plugin_opener::open_path(&dir, None::<&str>).map_err(err)?;
     Ok(dir.to_string_lossy().to_string())
 }
 
@@ -958,10 +958,7 @@ async fn open_log() -> Result<String, String> {
     if !p.exists() {
         std::fs::write(&p, "").map_err(err)?;
     }
-    std::process::Command::new("explorer")
-        .arg(format!("/select,{}", p.display()))
-        .spawn()
-        .map_err(err)?;
+    tauri_plugin_opener::reveal_item_in_dir(&p).map_err(err)?;
     Ok(p.to_string_lossy().to_string())
 }
 
@@ -1072,6 +1069,7 @@ async fn skip_self_update(app: State<'_, Shared>, tag: String) -> Result<(), Str
     st.save().map_err(err)
 }
 
+#[cfg(windows)]
 #[tauri::command]
 async fn apply_self_update(app: State<'_, Shared>, handle: tauri::AppHandle) -> Result<String, String> {
     let url = std::env::var("ADDONFORGE_UPDATE_URL").ok();
@@ -1090,6 +1088,15 @@ async fn apply_self_update(app: State<'_, Shared>, handle: tauri::AppHandle) -> 
         h.exit(0);
     });
     Ok(new_exe.to_string_lossy().to_string())
+}
+
+/// Not Windows: releases only carry a Windows exe, so open the releases
+/// page instead and keep running. "browser" tells the UI which happened.
+#[cfg(not(windows))]
+#[tauri::command]
+async fn apply_self_update() -> Result<String, String> {
+    tauri_plugin_opener::open_url(selfupdate::RELEASES_URL, None::<&str>).map_err(err)?;
+    Ok("browser".into())
 }
 
 /// First launch of a newer build: return that build's release notes once.
@@ -1352,6 +1359,9 @@ pub fn cli(args: &[String]) -> i32 {
                 let r = selfupdate::check(&app.client, url.as_deref()).await;
                 Ok(serde_json::to_value(r).unwrap())
             }
+            #[cfg(not(windows))]
+            "selfupdate" => Err(format!("self-update is Windows-only; get the new version from {}", selfupdate::RELEASES_URL)),
+            #[cfg(windows)]
             "selfupdate" => {
                 let url = args.get(1).cloned().or_else(|| std::env::var("ADDONFORGE_UPDATE_URL").ok());
                 let r = selfupdate::check(&app.client, url.as_deref()).await;

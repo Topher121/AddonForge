@@ -22,7 +22,7 @@ pub const TMP_DIR: &str = ".addonforge-tmp";
 const FORBIDDEN_EXT: &[&str] = &[
     "exe", "dll", "sys", "scr", "com", "pif", "cpl", "msi", "msp", "bat", "cmd", "ps1", "psm1",
     "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "jar", "py", "sh", "lnk", "reg", "inf",
-    "ocx", "drv", "app", "dmg", "apk",
+    "ocx", "drv", "app", "dmg", "apk", "command", "dylib", "so", "pkg", "scpt",
 ];
 
 fn unique() -> String {
@@ -138,14 +138,27 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
                     p.strip_prefix(root).unwrap_or(&p).display()
                 );
             }
-            // Windows also runs by "magic": check the first bytes of anything unusual.
+            // Windows and macOS also run by "magic": check the first bytes of anything unusual.
             if !matches!(ext, "lua" | "xml" | "toc" | "tga" | "blp" | "png" | "jpg" | "jpeg" | "gif" | "ttf" | "otf" | "mp3" | "ogg" | "wav" | "txt" | "md" | "json" | "html" | "css" | "csv") {
                 if let Ok(mut f) = fs::File::open(&p) {
                     let mut head = [0u8; 4];
                     use std::io::Read;
-                    if f.read(&mut head).unwrap_or(0) >= 2 && &head[..2] == b"MZ" {
+                    let n = f.read(&mut head).unwrap_or(0);
+                    if n >= 2 && &head[..2] == b"MZ" {
                         anyhow::bail!(
                             "SAFETY: refused, {} is a Windows executable in disguise",
+                            p.strip_prefix(root).unwrap_or(&p).display()
+                        );
+                    }
+                    // Mach-O 32/64-bit (both byte orders) and universal binaries.
+                    if n == 4
+                        && matches!(
+                            head,
+                            [0xFE, 0xED, 0xFA, 0xCE | 0xCF] | [0xCE | 0xCF, 0xFA, 0xED, 0xFE] | [0xCA, 0xFE, 0xBA, 0xBE]
+                        )
+                    {
+                        anyhow::bail!(
+                            "SAFETY: refused, {} is a macOS executable in disguise",
                             p.strip_prefix(root).unwrap_or(&p).display()
                         );
                     }
@@ -283,6 +296,19 @@ mod tests {
         // Disguised: no extension, MZ header.
         fs::write(addon.join("README"), b"MZ\x90\x00").unwrap();
         assert!(safety_scan(&root).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn safety_scan_refuses_mach_o() {
+        let root = std::env::temp_dir().join(format!("af-macho-{}", unique()));
+        let addon = root.join("Evil");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(addon.join("Evil.toc"), "## Interface: 16001\n").unwrap();
+        // 64-bit Mach-O header behind a harmless-looking extension.
+        fs::write(addon.join("data.bin"), [0xCF, 0xFA, 0xED, 0xFE, 0x07, 0x00]).unwrap();
+        let err = safety_scan(&root).unwrap_err().to_string();
+        assert!(err.contains("macOS executable"), "{err}");
         let _ = fs::remove_dir_all(&root);
     }
 }

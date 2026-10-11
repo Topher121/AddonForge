@@ -68,6 +68,23 @@ The original ember-and-anvil app icon lives in `icon.svg`. Run
 and packaged desktop icons, then rebuild the app. The Windows executable and
 installer both embed `src-tauri/icons/icon.ico`.
 
+## macOS
+
+AddonForge also runs on macOS, built from source (no Mac release yet).
+WoW on macOS lives in `/Applications/World of Warcraft`; the app looks there, in
+`~/Applications` and on mounted volumes, or you can pick the folder yourself.
+Install the Xcode Command Line Tools (`xcode-select --install`), Rust and Node, then:
+
+```
+npm install
+npx tauri build --bundles app   # src-tauri/target/release/bundle/macos/AddonForge.app
+```
+
+The app isn't signed, so the first launch needs right-click → *Open*. Settings
+and the log live in `~/Library/Application Support/AddonForge`. When a new
+version is out, the update button opens the releases page instead of swapping
+the exe.
+
 ## Contributing
 
 Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and a pull request, validated automatically. Or open an "Add an addon" issue and we'll do it.
