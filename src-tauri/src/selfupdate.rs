@@ -64,7 +64,8 @@ fn semver(v: &str) -> (u64, u64, u64) {
 
 pub fn is_newer(latest: &Latest) -> bool {
     let (a, b) = (semver(&latest.version), semver(version()));
-    a > b || (a == b && latest.build > build())
+    // Off Windows the app is built from source (build 0), so only the version counts.
+    a > b || (cfg!(windows) && a == b && latest.build > build())
 }
 
 pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> SelfUpdate {
@@ -181,4 +182,18 @@ pub fn finish_replace(old: &Path) {
         std::thread::sleep(std::time::Duration::from_millis(500));
     }
     crate::loge!("self-update: could not remove old exe {}", old.display());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(not(windows))]
+    fn same_version_higher_build_is_not_newer_off_windows() {
+        let same = Latest { version: version().into(), build: 99, ..Default::default() };
+        assert!(!is_newer(&same));
+        let next = Latest { version: "999.0.0".into(), ..Default::default() };
+        assert!(is_newer(&next));
+    }
 }

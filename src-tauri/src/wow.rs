@@ -114,19 +114,14 @@ fn root_dirs() -> Vec<PathBuf> {
     roots
 }
 
-/// Candidate `World of Warcraft` folders: /Applications, ~/Applications and
-/// the top level (or Applications folder) of every mounted volume.
+/// Candidate `World of Warcraft` folders: /Applications and ~/Applications.
+/// No /Volumes scan: it duplicates / via "Macintosh HD" and touching external
+/// or network volumes triggers privacy prompts. Those users pick the folder.
 #[cfg(target_os = "macos")]
 fn root_dirs() -> Vec<PathBuf> {
     let mut roots = vec![PathBuf::from("/Applications/World of Warcraft")];
     if let Some(home) = dirs::home_dir() {
         roots.push(home.join("Applications").join("World of Warcraft"));
-    }
-    if let Ok(rd) = fs::read_dir("/Volumes") {
-        for vol in rd.flatten() {
-            roots.push(vol.path().join("World of Warcraft"));
-            roots.push(vol.path().join("Applications").join("World of Warcraft"));
-        }
     }
     roots
 }

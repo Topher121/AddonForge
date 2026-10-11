@@ -22,7 +22,12 @@ pub const TMP_DIR: &str = ".addonforge-tmp";
 const FORBIDDEN_EXT: &[&str] = &[
     "exe", "dll", "sys", "scr", "com", "pif", "cpl", "msi", "msp", "bat", "cmd", "ps1", "psm1",
     "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "jar", "py", "sh", "lnk", "reg", "inf",
-    "ocx", "drv", "app", "dmg", "apk", "command", "dylib", "so", "pkg", "scpt",
+    "ocx", "drv", "app", "dmg", "apk", "command", "dylib", "so", "pkg", "scpt", "tool", "terminal",
+];
+
+/// macOS bundles are directories; refuse folders with these extensions.
+const FORBIDDEN_DIR_EXT: &[&str] = &[
+    "app", "bundle", "framework", "kext", "plugin", "workflow", "appex", "prefpane", "saver",
 ];
 
 fn unique() -> String {
@@ -124,6 +129,13 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
                 anyhow::bail!("zip contains a symbolic link: {}", p.display());
             }
             if ft.is_dir() {
+                let lower = e.file_name().to_string_lossy().to_ascii_lowercase();
+                if lower.contains('.') && FORBIDDEN_DIR_EXT.contains(&lower.rsplit('.').next().unwrap_or("")) {
+                    anyhow::bail!(
+                        "SAFETY: refused, the zip contains an application bundle ({}) which no WoW addon needs",
+                        p.strip_prefix(root).unwrap_or(&p).display()
+                    );
+                }
                 walk(root, &p, depth + 1, count)?;
                 continue;
             }
@@ -140,28 +152,35 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
             }
             // Windows and macOS also run by "magic": check the first bytes of anything unusual.
             if !matches!(ext, "lua" | "xml" | "toc" | "tga" | "blp" | "png" | "jpg" | "jpeg" | "gif" | "ttf" | "otf" | "mp3" | "ogg" | "wav" | "txt" | "md" | "json" | "html" | "css" | "csv") {
-                if let Ok(mut f) = fs::File::open(&p) {
-                    let mut head = [0u8; 4];
-                    use std::io::Read;
-                    let n = f.read(&mut head).unwrap_or(0);
-                    if n >= 2 && &head[..2] == b"MZ" {
-                        anyhow::bail!(
-                            "SAFETY: refused, {} is a Windows executable in disguise",
-                            p.strip_prefix(root).unwrap_or(&p).display()
-                        );
-                    }
-                    // Mach-O 32/64-bit (both byte orders) and universal binaries.
-                    if n == 4
-                        && matches!(
-                            head,
-                            [0xFE, 0xED, 0xFA, 0xCE | 0xCF] | [0xCE | 0xCF, 0xFA, 0xED, 0xFE] | [0xCA, 0xFE, 0xBA, 0xBE]
-                        )
-                    {
-                        anyhow::bail!(
-                            "SAFETY: refused, {} is a macOS executable in disguise",
-                            p.strip_prefix(root).unwrap_or(&p).display()
-                        );
-                    }
+                // Fail closed: a file we can't read (e.g. mode 0o111) can't be vetted.
+                let unreadable = || anyhow!("SAFETY: refused, cannot inspect {}", p.strip_prefix(root).unwrap_or(&p).display());
+                let mut f = fs::File::open(&p).map_err(|_| unreadable())?;
+                let mut head = [0u8; 4];
+                use std::io::Read;
+                let n = f.read(&mut head).map_err(|_| unreadable())?;
+                if n >= 2 && &head[..2] == b"MZ" {
+                    anyhow::bail!(
+                        "SAFETY: refused, {} is a Windows executable in disguise",
+                        p.strip_prefix(root).unwrap_or(&p).display()
+                    );
+                }
+                if n >= 2 && &head[..2] == b"#!" {
+                    anyhow::bail!(
+                        "SAFETY: refused, {} is a script in disguise",
+                        p.strip_prefix(root).unwrap_or(&p).display()
+                    );
+                }
+                // Mach-O 32/64-bit (both byte orders) and universal (32/64-bit) binaries.
+                if n == 4
+                    && matches!(
+                        head,
+                        [0xFE, 0xED, 0xFA, 0xCE | 0xCF] | [0xCE | 0xCF, 0xFA, 0xED, 0xFE] | [0xCA, 0xFE, 0xBA, 0xBE | 0xBF]
+                    )
+                {
+                    anyhow::bail!(
+                        "SAFETY: refused, {} is a macOS executable in disguise",
+                        p.strip_prefix(root).unwrap_or(&p).display()
+                    );
                 }
             }
         }
@@ -309,6 +328,22 @@ mod tests {
         fs::write(addon.join("data.bin"), [0xCF, 0xFA, 0xED, 0xFE, 0x07, 0x00]).unwrap();
         let err = safety_scan(&root).unwrap_err().to_string();
         assert!(err.contains("macOS executable"), "{err}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn safety_scan_refuses_shebang_and_app_bundle() {
+        let root = std::env::temp_dir().join(format!("af-mac-{}", unique()));
+        let addon = root.join("Evil");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(addon.join("Evil.toc"), "## Interface: 16001\n").unwrap();
+        fs::write(addon.join("run"), "#!/bin/sh\necho hi\n").unwrap();
+        let err = safety_scan(&root).unwrap_err().to_string();
+        assert!(err.contains("script in disguise"), "{err}");
+        fs::remove_file(addon.join("run")).unwrap();
+        fs::create_dir_all(addon.join("Helper.app").join("Contents")).unwrap();
+        let err = safety_scan(&root).unwrap_err().to_string();
+        assert!(err.contains("application bundle"), "{err}");
         let _ = fs::remove_dir_all(&root);
     }
 }
