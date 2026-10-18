@@ -1,4 +1,4 @@
-//! Persistent local state: `%APPDATA%\AddonForge\state.json`.
+//! Persistent local state: `%APPDATA%\AddonForge\state.json` (macOS: `~/Library/Application Support/AddonForge`).
 //!
 //! This is the only settings file the app writes outside the game's AddOns
 //! folder (plus `addonforge.log` beside it). Written atomically (tmp +

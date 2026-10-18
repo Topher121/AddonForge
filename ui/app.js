@@ -974,7 +974,12 @@ $("selfupdate-go").onclick = async () => {
   go.innerHTML = '<span class="spinner"></span> Downloading';
   go.disabled = true;
   try {
-    await invoke("apply_self_update");
+    if ((await invoke("apply_self_update")) === "browser") {
+      $("selfupdate-text").textContent = "Opened the download page in your browser.";
+      go.textContent = "Update now";
+      go.disabled = false;
+      return;
+    }
     $("selfupdate-text").textContent = "Downloaded. Restarting into the new version…";
   } catch (err) {
     toast(String(err), true);

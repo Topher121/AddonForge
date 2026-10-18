@@ -1,4 +1,4 @@
-//! Tiny local log: `%APPDATA%\AddonForge\addonforge.log`.
+//! Tiny local log: `%APPDATA%\AddonForge\addonforge.log` (macOS: `~/Library/Application Support/AddonForge`).
 //!
 //! Local only, never uploaded. Rotates once past ~1 MB (one `.1` backup).
 //! The "Report a problem" button attaches the tail of this file so bug
