@@ -197,6 +197,19 @@ GET /v1/games/{id}/version-types once the key exists.
   on 2026-10-02 a `--cli use` test pointed the owner's real state at a
   temp folder because of that. Always set ADDONFORGE_STATE_DIR for tests.
 
+## macOS support (PR #2 by RobbieMinderhoud, merged 2026-10-18, build 17)
+First outside contribution. Mac install discovery (/Applications and
+~/Applications only), opener plugin instead of explorer.exe for "open
+folder"/"open log", self-update is `#[cfg(windows)]` (Mac gets the releases
+page; `is_newer` compares version only off Windows), zip safety scan also
+refuses Mach-O / universal binaries, `#!` scripts, .app/.bundle/.framework
+folders, .command/.dylib/.so/.pkg/.scpt, and now FAILS CLOSED on any
+unreadable non-whitelisted file. CI matrix: windows-latest + macos-latest.
+No Mac release artifacts: Mac users build from source (README section).
+Reviewed line by line + full suite + installer build on Windows before the
+owner merged. First-time contributors need "Approve workflows to run" on
+the PR page (owner only) before CI runs.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge
