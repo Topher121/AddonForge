@@ -78,6 +78,54 @@ pub async fn download(
     Ok(path)
 }
 
+/// The folder name WoW expects: the one its `.toc` is named after. A GitHub
+/// source archive unpacks as `GatherLite-7.6.3/GatherLite.toc`, so the folder
+/// has to become `GatherLite`. Multi-TOC addons (`X.toc`, `X_Forever.toc`)
+/// resolve to the shortest stem.
+fn canonical_name(dir: &Path) -> Option<String> {
+    let current = dir.file_name()?.to_string_lossy().to_string();
+    let mut stems: Vec<String> = fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|e| {
+            let n = e.file_name().to_string_lossy().to_string();
+            n.to_ascii_lowercase().ends_with(".toc").then(|| n[..n.len() - 4].to_string())
+        })
+        .collect();
+    if stems.is_empty() || stems.iter().any(|s| s.eq_ignore_ascii_case(&current)) {
+        return Some(current);
+    }
+    // Per-flavour TOCs share a base name: `GatherLite_Tbc`, `GatherLite_Vanilla`
+    // -> `GatherLite`. Strip a known suffix, then take the most common base.
+    const SUFFIXES: &[&str] = &[
+        "forever", "camelot", "vanilla", "classic", "era", "anniversary", "tbc", "bcc", "wrath", "wotlk", "wotlkc",
+        "cata", "mists", "mop", "standard", "mainline", "retail",
+    ];
+    let base = |stem: &str| -> String {
+        let lower = stem.to_ascii_lowercase();
+        for suf in SUFFIXES {
+            for sep in ['_', '-'] {
+                let tail = format!("{sep}{suf}");
+                if lower.ends_with(&tail) && lower.len() > tail.len() {
+                    return stem[..stem.len() - tail.len()].to_string();
+                }
+            }
+        }
+        stem.to_string()
+    };
+    let mut counts: Vec<(String, usize)> = Vec::new();
+    for stem in &stems {
+        let b = base(stem);
+        match counts.iter_mut().find(|(name, _)| name.eq_ignore_ascii_case(&b)) {
+            Some(entry) => entry.1 += 1,
+            None => counts.push((b, 1)),
+        }
+    }
+    counts.sort_by(|x, y| y.1.cmp(&x.1).then(x.0.len().cmp(&y.0.len())).then(x.0.cmp(&y.0)));
+    stems.clear();
+    Some(counts.remove(0).0)
+}
+
 fn has_toc(dir: &Path) -> bool {
     fs::read_dir(dir)
         .map(|rd| {
@@ -219,12 +267,21 @@ pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> 
             }
         };
 
-        for src in sources {
-            let name = src
+        for mut src in sources {
+            let mut name = src
                 .file_name()
                 .ok_or_else(|| anyhow!("bad folder name"))?
                 .to_string_lossy()
                 .to_string();
+            if let Some(wanted) = canonical_name(&src) {
+                if wanted != name {
+                    let renamed = src.with_file_name(&wanted);
+                    fs::rename(&src, &renamed).with_context(|| format!("rename {name} to {wanted}"))?;
+                    crate::logi!("folder {name} renamed to {wanted} (its .toc name)");
+                    src = renamed;
+                    name = wanted;
+                }
+            }
             if name.starts_with('.') || name.contains("..") {
                 anyhow::bail!("refusing suspicious folder name {name}");
             }
@@ -315,6 +372,29 @@ mod tests {
         // Disguised: no extension, MZ header.
         fs::write(addon.join("README"), b"MZ\x90\x00").unwrap();
         assert!(safety_scan(&root).is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn source_archive_folder_takes_its_toc_name() {
+        let root = std::env::temp_dir().join(format!("af-canon-{}", unique()));
+        let wrapped = root.join("GatherLite-7.6.3");
+        fs::create_dir_all(&wrapped).unwrap();
+        fs::write(wrapped.join("GatherLite.toc"), "## Interface: 16001\n").unwrap();
+        fs::write(wrapped.join("GatherLite_Forever.toc"), "## Interface: 16001\n").unwrap();
+        assert_eq!(canonical_name(&wrapped).as_deref(), Some("GatherLite"));
+        // Only per-flavour TOCs, no plain one (GatherLite 7.6.3 on GitHub).
+        let flavours = root.join("GatherLite-7.6.4");
+        fs::create_dir_all(&flavours).unwrap();
+        for f in ["GatherLite_Cata.toc", "GatherLite_Tbc.toc", "GatherLite_Vanilla.toc", "GatherLite_Wrath.toc"] {
+            fs::write(flavours.join(f), "").unwrap();
+        }
+        assert_eq!(canonical_name(&flavours).as_deref(), Some("GatherLite"));
+        let proper = root.join("BigWigs");
+        fs::create_dir_all(&proper).unwrap();
+        fs::write(proper.join("BigWigs.toc"), "").unwrap();
+        fs::write(proper.join("BigWigs_Forever.toc"), "").unwrap();
+        assert_eq!(canonical_name(&proper).as_deref(), Some("BigWigs"));
         let _ = fs::remove_dir_all(&root);
     }
 
