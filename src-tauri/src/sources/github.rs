@@ -109,8 +109,38 @@ fn pick_asset<'a>(zips: &'a [&'a ApiAsset], asset_hint: Option<&str>) -> &'a Api
         .unwrap_or(&zips[0])
 }
 
+/// A release with no files at all: GitHub still serves the tagged source as a
+/// zip. That is only a usable addon when the author bundles nothing at
+/// packaging time, so a `.pkgmeta` with `externals` means "ask the author".
+async fn source_archive(client: &reqwest::Client, repo: &str, rel: &ApiRelease) -> anyhow::Result<Remote> {
+    let tag = rel.tag_name.trim();
+    if tag.is_empty() {
+        anyhow::bail!("release has no files and no tag");
+    }
+    let pkgmeta = format!("https://raw.githubusercontent.com/{repo}/{tag}/.pkgmeta");
+    if let Ok(resp) = client.get(&pkgmeta).send().await {
+        if resp.status().is_success() {
+            let text = resp.text().await.unwrap_or_default();
+            if text.lines().any(|l| l.trim_start().starts_with("externals")) {
+                anyhow::bail!(
+                    "release {tag} has no packaged zip, and this addon bundles libraries only when packaged; ask the author to attach the packaged zip to the GitHub release"
+                );
+            }
+        }
+    }
+    let name = repo.rsplit('/').next().unwrap_or(repo);
+    Ok(Remote {
+        version: tag.to_string(),
+        download_url: format!("https://github.com/{repo}/archive/refs/tags/{tag}.zip"),
+        filename: format!("{name}-{tag}.zip"),
+        forever: None,
+        prerelease: rel.prerelease,
+    })
+}
+
 async fn from_api_release(
     client: &reqwest::Client,
+    repo: &str,
     rel: ApiRelease,
     asset_hint: Option<&str>,
 ) -> anyhow::Result<Remote> {
@@ -141,6 +171,9 @@ async fn from_api_release(
         .filter(|a| a.name.to_ascii_lowercase().ends_with(".zip"))
         .collect();
     if zips.is_empty() {
+        if rel.assets.is_empty() {
+            return source_archive(client, repo, &rel).await;
+        }
         anyhow::bail!("release {} has no zip asset", rel.tag_name);
     }
     let pick = pick_asset(&zips, asset_hint);
@@ -183,9 +216,9 @@ pub async fn resolve(
         let list: Vec<ApiRelease> = resp.error_for_status()?.json().await?;
         let rel = list
             .into_iter()
-            .find(|r| !r.draft && !r.assets.is_empty())
-            .ok_or_else(|| anyhow::anyhow!("no GitHub release with files for {repo}"))?;
-        return from_api_release(client, rel, asset_hint).await;
+            .find(|r| !r.draft)
+            .ok_or_else(|| anyhow::anyhow!("no GitHub release found for {repo}"))?;
+        return from_api_release(client, repo, rel, asset_hint).await;
     }
 
     let base = format!("https://github.com/{repo}/releases/latest/download/");
@@ -206,5 +239,5 @@ pub async fn resolve(
         return Err(e);
     }
     let rel: ApiRelease = resp.error_for_status()?.json().await?;
-    from_api_release(client, rel, asset_hint).await
+    from_api_release(client, repo, rel, asset_hint).await
 }
