@@ -155,6 +155,12 @@ forbid saving or caching API data), (3) is installing from GitHub / Wago /
 WoWI a problem under the non-compete wording. Also a console login problem
 (account was created by them; reset email not arriving). WAIT for their
 written answer before writing any CurseForge code.
+Follow-up 2026-10-23: no reply to the 2026-09-28 email (cfforstudios@
+overwolf.com) or the web form, so a reply was sent on the approval thread
+itself (from api@curseforge.com, in the studio Proton inbox, which lives
+inside the owner's personal Proton account). The approval email CONTAINS
+the API key in plain text: the console login was never needed for it. The
+owner copies it to private/curseforge-key.txt himself; never transcribe it.
 Hard constraints from the terms whatever they answer: key never in the repo
 or chat (private/curseforge-key.txt, gitignored); no disk cache of API
 data and none of it in stats.json; no proxy or relay server (terms forbid
