@@ -26,6 +26,11 @@ pub struct WowInstall {
 
 /// Map Blizzard product codes to the flavour we support.
 pub fn product_flavor(product: &str) -> (&'static str, String) {
+    // The live client's folder is `_forever_`; its product code was not
+    // published in advance, so anything with "forever" in it counts.
+    if product != "wow_classic_beta" && product.to_ascii_lowercase().contains("forever") {
+        return ("forever", "WoW: Forever".into());
+    }
     match product {
         "wow_classic_beta" => ("forever", "WoW: Forever (beta)".into()),
         "wow" => ("other", "Retail".into()),
@@ -79,7 +84,13 @@ pub fn describe_install(product_dir: &Path) -> Option<WowInstall> {
             .unwrap_or_default();
         format!("wow_{name}")
     });
-    let (flavor, label) = product_flavor(&product);
+    let (mut flavor, mut label) = product_flavor(&product);
+    // A `_forever_` folder is Forever whatever its .flavor.info says.
+    let folder = product_dir.file_name().map(|s| s.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
+    if folder == "_forever_" && flavor != "forever" {
+        flavor = "forever";
+        label = "WoW: Forever".into();
+    }
     Some(WowInstall {
         path: product_dir.to_string_lossy().to_string(),
         product,
@@ -368,6 +379,24 @@ pub fn scan_addons(install: &Path) -> Vec<AddonFolder> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_forever_folder_is_recognised() {
+        assert_eq!(product_flavor("wow_classic_beta").0, "forever");
+        assert_eq!(product_flavor("wow_forever").0, "forever");
+        assert_eq!(product_flavor("wow_classic_forever"), ("forever", "WoW: Forever".to_string()));
+        assert_eq!(product_flavor("wow_classic_era").0, "other");
+        let root = std::env::temp_dir().join(format!("af-forever-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let live = root.join("_forever_");
+        std::fs::create_dir_all(live.join("Interface").join("AddOns")).unwrap();
+        // Unknown product code in .flavor.info: the folder name still wins.
+        std::fs::write(live.join(".flavor.info"), "Product Flavor!STRING:0\nwow_something_new\n").unwrap();
+        let info = describe_install(&live).unwrap();
+        assert_eq!(info.flavor, "forever");
+        assert_eq!(info.label, "WoW: Forever");
+        let _ = std::fs::remove_dir_all(&root);
+    }
 
     #[test]
     fn svfix_detected_by_wtf_marker_or_addon_link() {

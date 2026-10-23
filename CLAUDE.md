@@ -210,6 +210,32 @@ Reviewed line by line + full suite + installer build on Windows before the
 owner merged. First-time contributors need "Approve workflows to run" on
 the PR page (owner only) before CI runs.
 
+## Live client folder `_forever_` (build 18, 2026-10-23, from issue #3's log)
+- The live Forever client installs to `World of Warcraft\_forever_` (seen in
+  a user's log 2026-10-22, before the 4 Nov launch). `product_flavor` maps any
+  product code containing "forever" to flavour `forever` (label "WoW:
+  Forever"), and `describe_install` treats a `_forever_` folder as Forever
+  whatever `.flavor.info` says. `wow_classic_beta` stays "WoW: Forever (beta)".
+  Settings placeholder and the bad-folder error mention `_forever_` first.
+  The real product code is still unconfirmed; diagnostics show it.
+- GitHub releases with NO files (GatherLite 7.6.3): `sources/github.rs`
+  `source_archive` falls back to `github.com/{repo}/archive/refs/tags/{tag}.zip`
+  unless the repo's `.pkgmeta` at that tag has `externals` (then it says to
+  ask the author for a packaged zip). `install.rs canonical_name` renames the
+  archive's `Repo-tag` folder to its .toc name, stripping per-flavour suffixes
+  (`GatherLite_Tbc` + `_Vanilla` -> `GatherLite`). A source archive says
+  nothing about Forever (forever = None), so the catalogue's `forever: false`
+  now triggers the "install anyway?" prompt. Pre-release mode no longer skips
+  releases without files.
+- Issue #3 (Xscyt, 2026-10-22) also claimed Wago API keys went Patreon-only
+  ($3/month). UNVERIFIED: docs.wago.io still says keys come from the developer
+  portal; the portal needs a login. The owner can check by trying to create a
+  key. If true, Wago-only addons (only !BugGrabber today) need a notice.
+  Auctionator's source is TheMouseNest/Auctionator with no GitHub releases:
+  stays link-only (CurseForge). GatherLite added to the catalogue (github +
+  wago + curse) with `forever: false` and a notice until the author tags a
+  Forever release.
+
 ## Footprint (measured 2026-09-22, 20s idle after launch, private bytes)
 Exe ~5 MB on disk. v0.1.0: ~170 MB private total (app ~6 MB + six WebView2
 helper processes; working set ~350 MB but that double-counts shared Edge
