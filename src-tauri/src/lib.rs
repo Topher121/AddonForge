@@ -195,12 +195,21 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         (key, cat_entry)
     };
 
-    // Does `f` look like a module of `parent` (e.g. BigWigs_Sporefall -> BigWigs,
-    // DBM-GUI -> DBM-Core)? Needs a declared dependency and a shared name prefix.
+    // Prefer an explicit parent, then a required dependency backed by Group
+    // or a shared name stem (e.g. DBM-GUI -> DBM-Core).
     fn module_of<'a>(f: &AddonFolder, on_disk: &HashMap<String, &'a AddonFolder>) -> Option<&'a AddonFolder> {
         if let Some(p) = &f.part_of {
             if let Some(parent) = on_disk.get(&p.to_ascii_lowercase()) {
                 return Some(parent);
+            }
+        }
+        if let Some(group) = &f.group {
+            if f.dependencies.iter().any(|d| d.eq_ignore_ascii_case(group)) {
+                if let Some(parent) = on_disk.get(&group.to_ascii_lowercase()) {
+                    if !parent.folder.eq_ignore_ascii_case(&f.folder) {
+                        return Some(parent);
+                    }
+                }
             }
         }
         let stem = |s: &str| s.split(['_', '-']).next().unwrap_or(s).to_ascii_lowercase();
@@ -225,22 +234,26 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         .iter()
         .map(|(k, e, f)| (f.folder.to_ascii_lowercase(), (k.clone(), *e)))
         .collect();
+    let has_package_owner = |key: &str, folder: &AddonFolder| {
+        !key.starts_with("folder:")
+            || managed_folder.contains_key(&folder.folder.to_ascii_lowercase())
+    };
     for item in keyed.iter_mut() {
-        if !item.0.starts_with("folder:") {
+        if has_package_owner(&item.0, item.2) {
             continue;
         }
         let mut cur = item.2;
         for _ in 0..4 {
-            match module_of(cur, &on_disk) {
-                Some(parent) => {
-                    if let Some((k, e)) = key_of.get(&parent.folder.to_ascii_lowercase()) {
-                        item.0 = k.clone();
-                        item.1 = *e;
-                    }
-                    cur = parent;
-                }
-                None => break,
+            let Some(parent) = module_of(cur, &on_disk) else { break };
+            let Some((k, e)) = key_of.get(&parent.folder.to_ascii_lowercase()) else { break };
+            item.0 = k.clone();
+            item.1 = *e;
+            // An identified package owns this module even if it
+            // depends on another package in the same group.
+            if has_package_owner(k, parent) {
+                break;
             }
+            cur = parent;
         }
     }
 
@@ -1458,6 +1471,139 @@ mod tests {
             forever_interface: true,
             ..Default::default()
         }
+    }
+
+    fn grouped_folder(name: &str, deps: &[&str], group: &str) -> AddonFolder {
+        AddonFolder { group: Some(group.into()), ..folder(name, deps, None) }
+    }
+
+    #[test]
+    fn group_and_required_dependency_group_ellesmere_modules() {
+        let mut core = folder("EllesmereUI", &[], None);
+        core.wago = Some("ZKbxbRN1".into());
+        core.version = Some("9.6.7".into());
+        let folders = vec![
+            core,
+            grouped_folder("EllesmereUIActionBars", &["EllesmereUI"], "EllesmereUI"),
+            grouped_folder("EllesmereUILocales", &["ELLESMEREUI"], "ellesmereui"),
+            grouped_folder("EllesmereUIOptions", &["EllesmereUI"], "EllesmereUI"),
+        ];
+        let pkgs = build_packages(&AppState::default(), &Catalog::default(), &folders);
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].key, "wago:ZKbxbRN1");
+        assert_eq!(pkgs[0].name, "EllesmereUI");
+        assert_eq!(pkgs[0].source, Some(Source::Wago("ZKbxbRN1".into())));
+        assert_eq!(pkgs[0].installed_version.as_deref(), Some("9.6.7"));
+        assert_eq!(pkgs[0].folders, vec![
+            "EllesmereUI", "EllesmereUIActionBars", "EllesmereUILocales", "EllesmereUIOptions",
+        ]);
+    }
+
+    #[test]
+    fn group_requires_an_installed_required_parent() {
+        let folders = vec![
+            folder("EllesmereUI", &[], None),
+            folder("LibStub", &[], None),
+            // A group alone does not establish folder ownership.
+            grouped_folder("EllesmereUIExtra", &[], "EllesmereUI"),
+            // A required dependency alone can be an independent addon/library.
+            folder("EllesmereUIPlugin", &["EllesmereUI"], None),
+            grouped_folder("OtherAddon", &["LibStub"], "EllesmereUI"),
+            // Shared category labels and missing parents are not packages.
+            grouped_folder("FirstTool", &["LibStub"], "Tools"),
+            grouped_folder("SecondTool", &["LibStub"], "Tools"),
+            grouped_folder("OrphanModule", &["MissingCore"], "MissingCore"),
+        ];
+        let pkgs = build_packages(&AppState::default(), &Catalog::default(), &folders);
+        assert_eq!(pkgs.len(), folders.len());
+        for f in &folders {
+            let pkg = pkgs.iter().find(|p| p.key == format!("folder:{}", f.folder)).unwrap();
+            assert_eq!(pkg.folders, vec![f.folder.clone()]);
+        }
+        let orphan = pkgs.iter().find(|p| p.name == "OrphanModule").unwrap();
+        assert_eq!(orphan.missing_deps.len(), 1);
+        assert_eq!(orphan.missing_deps[0].folder, "MissingCore");
+    }
+
+    #[test]
+    fn group_preserves_explicit_package_ownership() {
+        let mut st = AppState::default();
+        st.installed.insert(
+            "github:author/Plugin".into(),
+            Installed {
+                source: "github".into(), source_id: "author/Plugin".into(), version: "2.0".into(),
+                folders: vec!["ManagedPlugin".into()], installed_at: 0,
+            },
+        );
+        let cat: Catalog = serde_json::from_str(r#"{"addons":[
+            {"id":"dbm","name":"Deadly Boss Mods","folders":["DBM-Core"]},
+            {"id":"dbm-dungeons","name":"DBM Dungeons","folders":["DBM-Party-Forever"]}
+        ]}"#).unwrap();
+        let mut wago = grouped_folder("WagoPlugin", &["DBM-Core"], "DBM-Core");
+        wago.wago = Some("another-project".into());
+        let mut curse = grouped_folder("CursePlugin", &["DBM-Core"], "DBM-Core");
+        curse.curse = Some(12345);
+        let mut wowi = grouped_folder("WowiPlugin", &["DBM-Core"], "DBM-Core");
+        wowi.wowi = Some(67890);
+        let folders = vec![
+            folder("DBM-Core", &[], None),
+            grouped_folder("DBM-Party-Forever", &["DBM-Core"], "DBM-Core"),
+            grouped_folder("ManagedPlugin", &["DBM-Core"], "DBM-Core"),
+            wago, curse, wowi,
+        ];
+        let pkgs = build_packages(&st, &cat, &folders);
+        assert_eq!(pkgs.len(), folders.len());
+        for key in ["cat:dbm", "cat:dbm-dungeons", "github:author/Plugin",
+            "wago:another-project", "curse:12345", "wowi:67890"] {
+            let pkg = pkgs.iter().find(|p| p.key == key).unwrap();
+            assert_eq!(pkg.folders.len(), 1, "{key}");
+        }
+        let managed = pkgs.iter().find(|p| p.key == "github:author/Plugin").unwrap();
+        assert!(managed.managed);
+        assert_eq!(managed.source, Some(Source::Github("author/Plugin".into())));
+    }
+
+    #[test]
+    fn group_stops_at_an_identified_parent() {
+        let mut st = AppState::default();
+        st.installed.insert(
+            // Updating an originally standalone addon retains its folder key.
+            "folder:ManagedAddon".into(),
+            Installed {
+                source: "github".into(), source_id: "author/Managed".into(), version: "1.0".into(),
+                folders: vec!["ManagedAddon".into()], installed_at: 0,
+            },
+        );
+        let cat: Catalog = serde_json::from_str(r#"{"addons":[
+            {"id":"catalogue-addon","name":"Catalogue addon","folders":["CatalogueAddon"]}
+        ]}"#).unwrap();
+        let mut project = grouped_folder("ProjectAddon", &["SharedFramework"], "SharedFramework");
+        project.wago = Some("project-id".into());
+        let folders = vec![
+            folder("SharedFramework", &[], None),
+            grouped_folder("CatalogueAddon", &["SharedFramework"], "SharedFramework"),
+            grouped_folder("CatalogueOptions", &["CatalogueAddon"], "CatalogueAddon"),
+            grouped_folder("ManagedAddon", &["SharedFramework"], "SharedFramework"),
+            grouped_folder("ManagedOptions", &["ManagedAddon"], "ManagedAddon"),
+            project,
+            grouped_folder("ProjectOptions", &["ProjectAddon"], "ProjectAddon"),
+        ];
+        let pkgs = build_packages(&st, &cat, &folders);
+        assert_eq!(pkgs.len(), 4);
+        let framework = pkgs.iter().find(|p| p.key == "folder:SharedFramework").unwrap();
+        assert_eq!(framework.folders, vec!["SharedFramework"]);
+        for (key, parent, child) in [
+            ("cat:catalogue-addon", "CatalogueAddon", "CatalogueOptions"),
+            ("folder:ManagedAddon", "ManagedAddon", "ManagedOptions"),
+            ("wago:project-id", "ProjectAddon", "ProjectOptions"),
+        ] {
+            let pkg = pkgs.iter().find(|p| p.key == key).unwrap();
+            assert_eq!(pkg.folders, vec![parent, child], "{key}");
+        }
+        let managed = pkgs.iter().find(|p| p.key == "folder:ManagedAddon").unwrap();
+        assert!(managed.managed);
+        assert_eq!(managed.source, Some(Source::Github("author/Managed".into())));
+        assert_eq!(managed.installed_version.as_deref(), Some("1.0"));
     }
 
     #[test]
