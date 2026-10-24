@@ -44,6 +44,9 @@ pub struct CatalogEntry {
     /// already on disk to this entry).
     #[serde(default)]
     pub folders: Vec<String>,
+    /// Group otherwise unowned direct required dependencies of the first folder.
+    #[serde(default)]
+    pub group_required_dependencies: bool,
     #[serde(default)]
     pub url: Option<String>,
     /// Does the author publish a Forever build?  true / false / null=unknown.

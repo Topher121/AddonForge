@@ -11,7 +11,7 @@ mod wow;
 
 use catalog::{Catalog, CatalogEntry, Stats};
 use serde::{Deserialize, Serialize};
-use sources::{normalize_version, ResolveOpts, Source};
+use sources::{normalize_version, Remote, ResolveOpts, Source};
 use state::{AppState, Installed};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -229,15 +229,15 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         let (k, e) = direct_key(f);
         keyed.push((k, e, f));
     }
-    // Second pass: standalone folders that are modules of another addon inherit its key.
-    let key_of: HashMap<String, (String, Option<&CatalogEntry>)> = keyed
-        .iter()
-        .map(|(k, e, f)| (f.folder.to_ascii_lowercase(), (k.clone(), *e)))
-        .collect();
     let has_package_owner = |key: &str, folder: &AddonFolder| {
         !key.starts_with("folder:")
             || managed_folder.contains_key(&folder.folder.to_ascii_lowercase())
     };
+    // Resolve existing module ownership before adopting required dependencies.
+    let key_of: HashMap<String, (String, Option<&CatalogEntry>)> = keyed
+        .iter()
+        .map(|(k, e, f)| (f.folder.to_ascii_lowercase(), (k.clone(), *e)))
+        .collect();
     for item in keyed.iter_mut() {
         if has_package_owner(&item.0, item.2) {
             continue;
@@ -254,6 +254,34 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
                 break;
             }
             cur = parent;
+        }
+    }
+
+    // Adopt unowned dependency groups only after their module membership is known.
+    let required_roots: Vec<_> = keyed.iter().filter_map(|(key, entry, f)| {
+        let e = entry.filter(|e| e.group_required_dependencies)?;
+        let primary = e.folders.first()?;
+        primary.eq_ignore_ascii_case(&f.folder).then(|| (key.clone(), e, *f))
+    }).collect();
+    let mut adopted = HashMap::new();
+    for (key, _, f) in &keyed {
+        if has_package_owner(key, f) || key != &format!("folder:{}", f.folder)
+            || f.folder.to_ascii_lowercase().starts_with("blizzard_")
+        {
+            continue;
+        }
+        let mut roots = required_roots.iter().filter(|(_, _, root)| {
+            root.dependencies.iter().any(|name| name.eq_ignore_ascii_case(&f.folder))
+        });
+        let Some((owner, entry, _)) = roots.next() else { continue };
+        if roots.next().is_none() {
+            adopted.insert(key.clone(), (owner.clone(), *entry));
+        }
+    }
+    for item in &mut keyed {
+        if let Some((key, entry)) = adopted.get(&item.0) {
+            item.0 = key.clone();
+            item.1 = Some(*entry);
         }
     }
 
@@ -282,17 +310,20 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             !f.dependencies.iter().any(|d| in_group.contains(&d.to_ascii_lowercase()))
                 && f.part_of.as_ref().map(|p| !in_group.contains(&p.to_ascii_lowercase())).unwrap_or(true)
         };
-        let primary = fs
-            .iter()
-            .min_by_key(|f| (!is_root(f), f.folder.len(), f.folder.clone()))
-            .copied()
+        let primary = entry
+            .filter(|e| e.group_required_dependencies)
+            .and_then(|e| e.folders.first())
+            .and_then(|name| fs.iter().copied().find(|f| f.folder.eq_ignore_ascii_case(name)))
+            .or_else(|| fs.iter()
+                .min_by_key(|f| (!is_root(f), f.folder.len(), f.folder.clone()))
+                .copied())
             .unwrap();
         let managed = st.installed.get(&key);
         let name = entry
             .map(|e| e.name.clone())
             .unwrap_or_else(|| primary.title.clone());
-        let installed_version = managed
-            .map(|m| m.version.clone())
+        let installed_version = managed.map(|m| m.version.clone())
+            .or_else(|| entry.filter(|e| e.group_required_dependencies).and_then(|_| primary.version.clone()))
             .or_else(|| fs.iter().find_map(|f| f.version.clone()))
             .filter(|v| !v.is_empty() && !v.starts_with('@'));
         let source = pick_source(entry, primary, has_wago, managed)
@@ -409,6 +440,75 @@ fn entry_hint(cat: &Catalog, pkg: &Package) -> (Option<String>, Option<bool>) {
     (entry.and_then(|e| e.asset_hint.clone()), entry.and_then(|e| e.forever))
 }
 
+fn entry_for_source<'a>(cat: &'a Catalog, key: &str, src: &Source) -> Option<&'a CatalogEntry> {
+    key.strip_prefix("cat:").and_then(|id| cat.addons.iter().find(|e| e.id == id))
+        .or_else(|| cat.addons.iter().find(|e| match src {
+            Source::Github(repo) => e.github.as_deref().map(|g| g.eq_ignore_ascii_case(repo)).unwrap_or(false),
+            Source::Wago(id) => e.wago.as_ref() == Some(id),
+            Source::Wowi(id) => e.wowi == Some(*id),
+            Source::Tukui(id) => e.tukui.as_ref() == Some(id),
+        }))
+}
+
+fn key_for_source(cat: &Catalog, st: &AppState, src: &Source, requested: Option<&str>) -> String {
+    let entry = entry_for_source(cat, "", src);
+    if let Some(key) = requested {
+        if st.installed.contains_key(key) || entry.is_none() {
+            return key.to_string();
+        }
+    }
+    let canonical = entry.map(|e| format!("cat:{}", e.id))
+        .unwrap_or_else(|| format!("{}:{}", src.kind(), src.id()));
+    if st.installed.contains_key(&canonical) {
+        return canonical;
+    }
+    // Reuse an existing installation of this source.
+    st.installed.iter().filter(|(_, rec)| {
+        match (Source::from_parts(&rec.source, &rec.source_id), src) {
+            (Some(Source::Github(a)), Source::Github(b)) => a.eq_ignore_ascii_case(b),
+            (Some(a), b) => &a == b,
+            _ => false,
+        }
+    }).map(|(key, _)| key).min().cloned().unwrap_or(canonical)
+}
+
+fn apply_remote(pkg: &mut Package, mut remote: Remote, vouched: Option<bool>) {
+    if remote.forever == Some(false) && vouched == Some(true) {
+        remote.forever = None;
+    }
+    let same = pkg.installed_version.as_deref()
+        .map(|v| normalize_version(v) == normalize_version(&remote.version)).unwrap_or(false);
+    pkg.update_available = !same;
+    pkg.status = if same { "ok".into() } else { "update".into() };
+    pkg.note = match remote.forever {
+        Some(false) => "Latest release does not list a Forever build".into(),
+        _ => String::new(),
+    };
+    pkg.remote_forever = remote.forever;
+    pkg.remote_prerelease = remote.prerelease;
+    pkg.remote_version = Some(remote.version);
+}
+
+fn protected_package_folders(st: &AppState, packages: &[Package], key: &str) -> HashMap<String, String> {
+    let mut protected = HashMap::new();
+    // Keep recorded ownership even if a separately managed folder is missing.
+    for (owner, rec) in &st.installed {
+        if owner != key {
+            for folder in &rec.folders {
+                protected.insert(folder.to_ascii_lowercase(), owner.clone());
+            }
+        }
+    }
+    for package in packages {
+        if package.key != key {
+            for folder in &package.folders {
+                protected.insert(folder.to_ascii_lowercase(), package.key.clone());
+            }
+        }
+    }
+    protected
+}
+
 async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
     let Some(src) = pkg.source.clone() else { return };
     let st = app.state.lock().await.clone();
@@ -422,27 +522,7 @@ async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
         prerelease: st.allow_prerelease,
     };
     match sources::resolve(&app.client, &src, opts).await {
-        Ok(mut r) => {
-            // Some authors list 16001 in the TOC but never added "forever" to
-            // release.json. If the catalogue vouches for it, don't scare people.
-            if r.forever == Some(false) && vouched == Some(true) {
-                r.forever = None;
-            }
-            let same = pkg
-                .installed_version
-                .as_deref()
-                .map(|v| normalize_version(v) == normalize_version(&r.version))
-                .unwrap_or(false);
-            pkg.update_available = !same;
-            pkg.status = if same { "ok".into() } else { "update".into() };
-            pkg.note = match r.forever {
-                Some(false) => "Latest release does not list a Forever build".into(),
-                _ => String::new(),
-            };
-            pkg.remote_forever = r.forever;
-            pkg.remote_prerelease = r.prerelease;
-            pkg.remote_version = Some(r.version);
-        }
+        Ok(r) => apply_remote(pkg, r, vouched),
         Err(e) => {
             loge!("check {}: {e}", pkg.key);
             pkg.status = "error".into();
@@ -633,27 +713,30 @@ async fn install_from(
     let install = current_install(app).await?;
     let addons = addons_dir(&install);
     let st = app.state.lock().await.clone();
+    let cat = catalog_cached(app).await;
+    let entry = entry_for_source(&cat, key, src);
     let opts = ResolveOpts {
         asset_hint,
         wago_key: st.wago_key.as_deref(),
         prerelease: st.allow_prerelease,
     };
     let remote = sources::resolve(&app.client, src, opts).await.map_err(err)?;
-    let vouched = match key.strip_prefix("cat:") {
-        Some(id) => catalog_cached(app)
-            .await
-            .addons
-            .iter()
-            .find(|e| e.id == id)
-            .and_then(|e| e.forever),
-        None => None,
-    };
+    let vouched = entry.and_then(|e| e.forever);
     // A source archive says nothing about flavours (forever = None); then the
     // catalogue's own verdict stands in for it.
     let not_forever = remote.forever == Some(false) || (remote.forever.is_none() && vouched == Some(false));
     if not_forever && !allow_non_forever && vouched != Some(true) {
         return Err("NOT_FOREVER".into());
     }
+    let protected = if entry.map(|e| e.group_required_dependencies).unwrap_or(false) {
+        let scan_path = install.clone();
+        let folders = tokio::task::spawn_blocking(move || wow::scan_addons(Path::new(&scan_path)))
+            .await.map_err(err)?;
+        let packages = build_packages(&st, &cat, &folders);
+        protected_package_folders(&st, &packages, key)
+    } else {
+        protected_package_folders(&st, &[], key)
+    };
     logi!("install {key} from {} {} -> {}", src.label(), remote.version, remote.download_url);
     let tmp = addons.join(install::TMP_DIR).join("dl");
     let zip = install::download(&app.client, &remote.download_url, &tmp, &remote.filename)
@@ -663,7 +746,7 @@ async fn install_from(
             e.to_string()
         })?;
     let addons2 = addons.clone();
-    let folders = tokio::task::spawn_blocking(move || install::place(&zip, &addons2))
+    let folders = tokio::task::spawn_blocking(move || install::place(&zip, &addons2, &protected))
         .await
         .map_err(err)?
         .map_err(|e| {
@@ -724,6 +807,10 @@ struct CatalogRow {
     stat_source: Option<String>,
 }
 
+fn installed_catalog_ids(packages: Vec<Package>) -> Vec<String> {
+    packages.into_iter().filter_map(|p| p.catalog_id).collect()
+}
+
 #[tauri::command]
 async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<Vec<CatalogRow>, String> {
     if refresh.unwrap_or(false) {
@@ -732,10 +819,7 @@ async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<V
     }
     let cat = catalog_cached(&app).await;
     let stats = stats_cached(&app).await;
-    let installed_keys: Vec<String> = match scan_packages(&app).await {
-        Ok(p) => p.into_iter().map(|p| p.key).collect(),
-        Err(_) => Vec::new(),
-    };
+    let installed_ids = scan_packages(&app).await.map(installed_catalog_ids).unwrap_or_default();
     Ok(cat
         .addons
         .into_iter()
@@ -743,7 +827,7 @@ async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<V
             let key = format!("cat:{}", e.id);
             let st = stats.entries.get(&e.id);
             CatalogRow {
-                installed: installed_keys.contains(&key),
+                installed: installed_ids.contains(&e.id),
                 key,
                 downloads: st.and_then(|s| s.downloads),
                 updated_at: st.and_then(|s| s.updated_at.clone()),
@@ -784,10 +868,7 @@ async fn catalog_featured(app: State<'_, Shared>) -> Result<Vec<catalog::Feature
 async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
     let cat = catalog_cached(&app).await;
     let has_wago = app.state.lock().await.has_wago_key();
-    let installed_keys: Vec<String> = match scan_packages(&app).await {
-        Ok(p) => p.into_iter().map(|p| p.key).collect(),
-        Err(_) => Vec::new(),
-    };
+    let installed_ids = scan_packages(&app).await.map(installed_catalog_ids).unwrap_or_default();
     Ok(cat
         .bundles
         .iter()
@@ -808,7 +889,7 @@ async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
                         desc: e.desc.clone(),
                         installable: direct || (e.wago.is_some() && has_wago),
                         needs_key: !direct && e.wago.is_some() && !has_wago,
-                        installed: installed_keys.contains(&format!("cat:{}", e.id)),
+                        installed: installed_ids.contains(&e.id),
                         forever: e.forever,
                     }
                 })
@@ -899,7 +980,7 @@ async fn install_catalog(
     if matches!(src, Source::Wago(_)) && !has_wago {
         return Err("This addon is on Wago: add your free Wago API key in Settings first".into());
     }
-    let key = format!("cat:{}", e.id);
+    let key = key_for_source(&cat, &st, &src, None);
     install_from(&app, &key, &src, e.asset_hint.as_deref(), allow_non_forever.unwrap_or(false)).await?;
     refreshed(&app, &key).await
 }
@@ -912,7 +993,9 @@ async fn install_source(
     key: Option<String>,
     allow_non_forever: Option<bool>,
 ) -> Result<Package, String> {
-    let key = key.unwrap_or_else(|| format!("{}:{}", source.kind(), source.id()));
+    let cat = catalog_cached(&app).await;
+    let st = app.state.lock().await.clone();
+    let key = key_for_source(&cat, &st, &source, key.as_deref());
     install_from(&app, &key, &source, None, allow_non_forever.unwrap_or(false)).await?;
     refreshed(&app, &key).await
 }
@@ -925,15 +1008,11 @@ async fn install_github(
 ) -> Result<Package, String> {
     let repo = sources::parse_github_repo(&repo)
         .ok_or_else(|| "Enter a GitHub repo as owner/name or paste its URL".to_string())?;
-    // If the catalogue already knows this repo, use its key so it groups properly.
+    // If the catalogue knows this source, retain its package identity.
     let cat = catalog_cached(&app).await;
-    let key = cat
-        .addons
-        .iter()
-        .find(|e| e.github.as_deref().map(|g| g.eq_ignore_ascii_case(&repo)).unwrap_or(false))
-        .map(|e| format!("cat:{}", e.id))
-        .unwrap_or_else(|| format!("github:{repo}"));
     let src = Source::Github(repo);
+    let st = app.state.lock().await.clone();
+    let key = key_for_source(&cat, &st, &src, None);
     install_from(&app, &key, &src, None, allow_non_forever.unwrap_or(false)).await?;
     refreshed(&app, &key).await
 }
@@ -1045,18 +1124,22 @@ async fn import_list(app: State<'_, Shared>, path: String) -> Result<Vec<ImportR
     let bytes = std::fs::read(&path).map_err(err)?;
     let file: ExportFile = serde_json::from_slice(&bytes).map_err(|e| format!("not an AddonForge list: {e}"))?;
     let have: Vec<String> = scan_packages(&app).await?.into_iter().map(|p| p.key).collect();
-    let has_wago = app.state.lock().await.has_wago_key();
+    let cat = catalog_cached(&app).await;
+    let st = app.state.lock().await.clone();
+    let has_wago = st.has_wago_key();
     Ok(file
         .addons
         .into_iter()
         .map(|it| {
-            let installed = have.contains(&it.key);
+            let key = it.source.as_ref().map(|src| key_for_source(&cat, &st, src, Some(&it.key)))
+                .unwrap_or(it.key);
+            let installed = have.contains(&key);
             let (installable, why) = match &it.source {
                 None => (false, "no source (probably CurseForge-only or a personal addon)".into()),
                 Some(Source::Wago(_)) if !has_wago => (false, "needs a Wago key".into()),
                 Some(_) => (true, String::new()),
             };
-            ImportRow { name: it.name, key: it.key, source: it.source, installed, installable, why }
+            ImportRow { name: it.name, key, source: it.source, installed, installable, why }
         })
         .collect())
 }
@@ -1324,17 +1407,22 @@ pub fn cli(args: &[String]) -> i32 {
                 let id = args.get(1).ok_or("usage: install <catalog id>")?;
                 let cat = catalog_cached(&app).await;
                 let e = cat.addons.iter().find(|e| &e.id == id).cloned().ok_or("not in catalogue")?;
-                let has_wago = app.state.lock().await.has_wago_key();
+                let st = app.state.lock().await.clone();
+                let has_wago = st.has_wago_key();
                 let src = pick_source(Some(&e), &AddonFolder::default(), has_wago, None).ok_or("no source")?;
                 let force = args.iter().any(|a| a == "--force");
-                let rec = install_from(&app, &format!("cat:{}", e.id), &src, e.asset_hint.as_deref(), force).await?;
+                let key = key_for_source(&cat, &st, &src, None);
+                let rec = install_from(&app, &key, &src, e.asset_hint.as_deref(), force).await?;
                 Ok(serde_json::to_value(rec).unwrap())
             }
             "github" => {
                 let repo = args.get(1).and_then(|r| sources::parse_github_repo(r)).ok_or("usage: github <owner/repo>")?;
                 let force = args.iter().any(|a| a == "--force");
-                let key = format!("github:{repo}");
-                let rec = install_from(&app, &key, &Source::Github(repo), None, force).await?;
+                let src = Source::Github(repo);
+                let cat = catalog_cached(&app).await;
+                let st = app.state.lock().await.clone();
+                let key = key_for_source(&cat, &st, &src, None);
+                let rec = install_from(&app, &key, &src, None, force).await?;
                 Ok(serde_json::to_value(rec).unwrap())
             }
             "remove" => {
@@ -1475,6 +1563,318 @@ mod tests {
 
     fn grouped_folder(name: &str, deps: &[&str], group: &str) -> AddonFolder {
         AddonFolder { group: Some(group.into()), ..folder(name, deps, None) }
+    }
+
+    fn dependency_catalog() -> Catalog {
+        serde_json::from_str(r#"{"addons":[{
+            "id":"atlas","name":"Atlas suite","github":"author/Atlas","folders":["Atlas"],
+            "group_required_dependencies":true
+        }]}"#).unwrap()
+    }
+
+    fn dependency_folders() -> Vec<AddonFolder> {
+        let mut client = folder("Atlas", &["AtlasData"], None);
+        client.version = Some("2.4".into());
+        client.author = Some("Client author".into());
+        let mut data = folder("AtlasData", &[], None);
+        data.version = Some("7.1".into());
+        data.author = Some("Data author".into());
+        vec![client, data]
+    }
+
+    fn remote(version: &str) -> Remote {
+        Remote {
+            version: version.into(),
+            download_url: "https://example.test/Atlas.zip".into(), filename: "Atlas.zip".into(),
+            forever: Some(true), prerelease: false,
+        }
+    }
+
+
+    #[test]
+    fn source_installs_use_catalogue_identity_when_known() {
+        let catalog = dependency_catalog();
+        let mut state = AppState::default();
+        let source = Source::Github("AUTHOR/aTlAs".into());
+        assert_eq!(key_for_source(&catalog, &state, &source, None), "cat:atlas");
+        assert_eq!(key_for_source(&catalog, &state, &source, Some("github:author/Atlas")), "cat:atlas");
+        assert_eq!(key_for_source(&catalog, &state, &Source::Github("other/Atlas".into()), None), "github:other/Atlas");
+        assert_eq!(key_for_source(&catalog, &state, &Source::Github("other/Atlas".into()), Some("custom:Atlas")), "custom:Atlas");
+        assert_eq!(key_for_source(&catalog, &state, &Source::Wowi(123), None), "wowi:123");
+
+        let recorded = Installed {
+            source: "github".into(), source_id: "Author/ATLAS".into(),
+            folders: vec!["Atlas".into()], ..Default::default()
+        };
+        state.installed.insert("github:author/Atlas".into(), recorded.clone());
+        assert_eq!(key_for_source(&catalog, &state, &source, None), "github:author/Atlas");
+        state.installed.insert("cat:atlas".into(), recorded.clone());
+        assert_eq!(key_for_source(&catalog, &state, &source, None), "cat:atlas");
+        assert_eq!(key_for_source(&catalog, &state, &source, Some("github:author/Atlas")), "github:author/Atlas");
+        state.installed.insert("folder:Atlas".into(), recorded);
+        assert_eq!(key_for_source(&catalog, &state, &source, Some("folder:Atlas")), "folder:Atlas");
+    }
+
+    #[test]
+    fn catalogue_opt_in_groups_required_dependencies_under_the_primary() {
+        let mut folders = dependency_folders();
+        folders.reverse();
+        folders[1].dependencies = vec!["ATLASDATA".into()];
+        let packages = build_packages(&AppState::default(), &dependency_catalog(), &folders);
+        assert_eq!(packages.len(), 1);
+        let package = &packages[0];
+        assert_eq!(package.key, "cat:atlas");
+        assert_eq!(package.name, "Atlas suite");
+        assert_eq!(package.author.as_deref(), Some("Client author"));
+        assert_eq!(package.installed_version.as_deref(), Some("2.4"));
+        assert_eq!(package.source, Some(Source::Github("author/Atlas".into())));
+        assert_eq!(package.folders, vec!["Atlas", "AtlasData"]);
+        assert_eq!(installed_catalog_ids(packages), vec!["atlas"]);
+    }
+
+    #[test]
+    fn required_dependency_grouping_is_disabled_by_default() {
+        let catalog: Catalog = serde_json::from_str(r#"{"addons":[{
+            "id":"atlas","name":"Atlas","folders":["Atlas"]
+        }]}"#).unwrap();
+        assert!(!catalog.addons[0].group_required_dependencies);
+        let packages = build_packages(&AppState::default(), &catalog, &dependency_folders());
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages.iter().find(|p| p.key == "cat:atlas").unwrap().folders, vec!["Atlas"]);
+    }
+
+    #[test]
+    fn opt_in_groups_only_direct_non_blizzard_dependencies() {
+        let mut folders = dependency_folders();
+        folders[0].dependencies.extend(["Blizzard_Shared".into(), "MissingData".into()]);
+        folders[1].dependencies.push("SharedStorage".into());
+        for name in ["Blizzard_Shared", "OptionalAddon", "SharedStorage"] {
+            folders.push(folder(name, &[], None));
+        }
+        folders.push(folder("IndependentTool", &["AtlasData"], None));
+        let packages = build_packages(&AppState::default(), &dependency_catalog(), &folders);
+        assert_eq!(packages.len(), 5);
+        let bundle = packages.iter().find(|p| p.key == "cat:atlas").unwrap();
+        assert_eq!(bundle.folders, vec!["Atlas", "AtlasData"]);
+        assert_eq!(bundle.missing_deps.len(), 1);
+        assert_eq!(bundle.missing_deps[0].folder, "MissingData");
+        assert_eq!(packages.iter().find(|p| p.key == "folder:IndependentTool").unwrap().folders, vec!["IndependentTool"]);
+    }
+
+    #[test]
+    fn managed_package_keys_preserve_catalogue_membership() {
+        for owner in ["cat:atlas", "github:author/Atlas", "folder:Atlas"] {
+            let mut state = AppState::default();
+            state.installed.insert(owner.into(), Installed {
+                source: "github".into(), source_id: "author/Atlas".into(),
+                folders: vec!["Atlas".into()], version: "recorded-release".into(), ..Default::default()
+            });
+            let packages = build_packages(&state, &dependency_catalog(), &dependency_folders());
+            assert_eq!(packages.len(), 1);
+            assert_eq!(packages[0].key, owner);
+            assert_eq!(packages[0].folders, vec!["Atlas", "AtlasData"]);
+            assert_eq!(packages[0].installed_version.as_deref(), Some("recorded-release"));
+            let installed_ids = installed_catalog_ids(packages);
+            assert_eq!(installed_ids, vec!["atlas"]);
+        }
+    }
+
+    #[test]
+    fn dependency_modules_use_existing_grouping() {
+        let mut folders = dependency_folders();
+        folders.push(grouped_folder("AtlasOptions", &["Atlas"], "Atlas"));
+        folders.push(grouped_folder("AtlasDataOptions", &["AtlasData"], "AtlasData"));
+        folders.push(grouped_folder("AtlasDataLayout", &["AtlasDataOptions"], "AtlasDataOptions"));
+        folders.reverse();
+        let packages = build_packages(&AppState::default(), &dependency_catalog(), &folders);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].folders, vec!["Atlas", "AtlasData", "AtlasDataLayout", "AtlasDataOptions", "AtlasOptions"]);
+        assert_eq!(packages[0].installed_version.as_deref(), Some("2.4"));
+    }
+
+    #[test]
+    fn required_dependency_grouping_preserves_existing_module_ownership() {
+        for owner in ["catalogue", "managed", "standalone"] {
+            for hint in ["part_of", "group", "stem"] {
+                let mut catalog = dependency_catalog();
+                let mut state = AppState::default();
+                let expected_key = match owner {
+                    "catalogue" => {
+                        catalog.addons.push(serde_json::from_str(r#"{
+                            "id":"other","name":"Other addon","folders":["OtherRoot"]
+                        }"#).unwrap());
+                        "cat:other"
+                    }
+                    "managed" => {
+                        state.installed.insert("github:provider/Other".into(), Installed {
+                            source: "github".into(), source_id: "provider/Other".into(),
+                            folders: vec!["OtherRoot".into()], ..Default::default()
+                        });
+                        "github:provider/Other"
+                    }
+                    _ => "folder:OtherRoot",
+                };
+                let module_name = if hint == "stem" { "OtherRoot_Data" } else { "SharedData" };
+                let options_name = format!("{module_name}Options");
+                let mut module = folder(module_name, &["OtherRoot"], None);
+                match hint {
+                    "part_of" => module.part_of = Some("OtherRoot".into()),
+                    "group" => module.group = Some("OtherRoot".into()),
+                    _ => {}
+                }
+                let folders = vec![
+                    folder("Atlas", &[module_name], None),
+                    module,
+                    grouped_folder(&options_name, &[module_name], module_name),
+                    folder("OtherRoot", &[], None),
+                ];
+                let packages = build_packages(&state, &catalog, &folders);
+                assert_eq!(packages.len(), 2, "{owner}: {hint}");
+                let bundle = packages.iter().find(|p| p.key == "cat:atlas").unwrap();
+                assert_eq!(bundle.folders, vec!["Atlas"], "{owner}: {hint}");
+                let other = packages.iter().find(|p| p.key == expected_key).unwrap();
+                assert_eq!(other.folders, vec!["OtherRoot".to_string(), module_name.into(), options_name]);
+                let protected = protected_package_folders(&state, &packages, &bundle.key);
+                assert_eq!(protected.get(&module_name.to_ascii_lowercase()).map(String::as_str), Some(expected_key));
+            }
+        }
+    }
+
+    #[test]
+    fn dependency_alone_does_not_identify_a_bundle() {
+        let mut catalog = dependency_catalog();
+        let mut folders = dependency_folders()[1..].to_vec();
+        let packages = build_packages(&AppState::default(), &catalog, &folders);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].key, "folder:AtlasData");
+        assert_eq!(packages[0].name, "AtlasData");
+        assert_eq!(packages[0].installed_version.as_deref(), Some("7.1"));
+        assert!(packages[0].catalog_id.is_none());
+        assert!(packages[0].source.is_none());
+        assert!(installed_catalog_ids(packages).is_empty());
+
+        // Another identity folder cannot activate grouping without the primary.
+        catalog.addons[0].folders.push("AtlasOptions".into());
+        folders.push(folder("AtlasOptions", &["AtlasData"], None));
+        let packages = build_packages(&AppState::default(), &catalog, &folders);
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages.iter().find(|p| p.key == "folder:AtlasData").unwrap().folders, vec!["AtlasData"]);
+    }
+
+    #[test]
+    fn identified_dependencies_remain_independent() {
+        for catalogued in [false, true] {
+            let mut catalog = dependency_catalog();
+            let mut folders = dependency_folders();
+            let expected = if catalogued {
+                catalog.addons.push(serde_json::from_str(r#"{
+                    "id":"atlas-data","name":"Atlas Data","folders":["AtlasData"]
+                }"#).unwrap());
+                "cat:atlas-data"
+            } else {
+                folders[1].wago = Some("data-project".into());
+                "wago:data-project"
+            };
+            let packages = build_packages(&AppState::default(), &catalog, &folders);
+            assert_eq!(packages.len(), 2);
+            assert_eq!(packages.iter().find(|p| p.key == "cat:atlas").unwrap().folders, vec!["Atlas"]);
+            assert_eq!(packages.iter().find(|p| p.key == expected).unwrap().folders, vec!["AtlasData"]);
+        }
+    }
+
+    #[test]
+    fn ambiguous_required_dependencies_stay_independent() {
+        let mut catalog = dependency_catalog();
+        catalog.addons.push(serde_json::from_str(r#"{
+            "id":"survey","name":"Survey","folders":["Survey"],"group_required_dependencies":true
+        }"#).unwrap());
+        let mut folders = dependency_folders();
+        folders.push(folder("Survey", &["AtlasData"], None));
+        for _ in 0..2 {
+            let packages = build_packages(&AppState::default(), &catalog, &folders);
+            assert_eq!(packages.len(), 3);
+            assert_eq!(packages.iter().find(|p| p.key == "folder:AtlasData").unwrap().folders, vec!["AtlasData"]);
+            catalog.addons.reverse();
+        }
+    }
+
+    #[test]
+    fn grouped_packages_use_recorded_provider_versions_for_updates() {
+        for (kind, id, installed, available) in [
+            ("github", "author/Atlas", "Atlas-v2.4+v7.1", "Atlas-v2.4+v7.2"),
+            ("wago", "atlas-project", "v2.4+v7.1", "v2.4+v7.2"),
+        ] {
+            let mut state = AppState::default();
+            state.installed.insert("cat:atlas".into(), Installed {
+                source: kind.into(), source_id: id.into(), version: installed.into(),
+                folders: vec!["Atlas".into(), "AtlasData".into()], ..Default::default()
+            });
+            let package = build_packages(&state, &dependency_catalog(), &dependency_folders()).pop().unwrap();
+            assert_eq!(package.installed_version.as_deref(), Some(installed));
+            assert_eq!(package.source, Source::from_parts(kind, id));
+            for (version, update) in [(installed, false), (available, true)] {
+                let mut checked = package.clone();
+                apply_remote(&mut checked, remote(version), None);
+                assert_eq!(checked.update_available, update, "{kind}: {version}");
+                assert_eq!(checked.status, if update { "update" } else { "ok" });
+                assert_eq!(checked.remote_version.as_deref(), Some(version));
+            }
+        }
+    }
+
+    #[test]
+    fn independently_managed_dependencies_keep_their_source_version_and_folders() {
+        for owner in ["github:provider/AtlasData", "folder:AtlasData"] {
+            let mut state = AppState::default();
+            state.installed.insert(owner.into(), Installed {
+                source: "github".into(), source_id: "provider/AtlasData".into(),
+                version: "provider-8".into(), folders: vec!["AtlasData".into()],
+                ..Default::default()
+            });
+            let mut folders = dependency_folders();
+            folders[1].group = Some("Atlas".into());
+            folders[1].dependencies = vec!["Atlas".into()];
+            folders.push(grouped_folder("AtlasDataOptions", &["AtlasData"], "AtlasData"));
+            let packages = build_packages(&state, &dependency_catalog(), &folders);
+            assert_eq!(packages.len(), 2, "{owner}");
+            let bundle = packages.iter().find(|p| p.key == "cat:atlas").unwrap();
+            assert_eq!(bundle.folders, vec!["Atlas"]);
+            let provider = packages.iter().find(|p| p.key == owner).unwrap();
+            assert_eq!(provider.folders, vec!["AtlasData", "AtlasDataOptions"]);
+            assert_eq!(provider.installed_version.as_deref(), Some("provider-8"));
+            assert_eq!(provider.source, Some(Source::Github("provider/AtlasData".into())));
+            assert!(provider.managed);
+            let protected = protected_package_folders(&state, &packages, &bundle.key);
+            assert_eq!(protected.get("atlasdata").map(String::as_str), Some(owner));
+            assert!(!protected.contains_key("atlas"));
+        }
+    }
+
+    #[test]
+    fn absent_separately_owned_dependency_still_protects_its_folder() {
+        let mut state = AppState::default();
+        state.installed.insert("folder:AtlasData".into(), Installed {
+            source: "github".into(), source_id: "provider/AtlasData".into(),
+            version: "7.1".into(), folders: vec!["AtlasData".into()],
+            ..Default::default()
+        });
+        let packages = build_packages(&state, &dependency_catalog(), &dependency_folders()[..1]);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].missing_deps[0].folder, "AtlasData");
+        let protected = protected_package_folders(&state, &packages, "cat:atlas");
+        assert_eq!(protected.get("atlasdata").map(String::as_str), Some("folder:AtlasData"));
+        assert!(!protected.contains_key("atlas"));
+    }
+
+    #[test]
+    fn single_addon_updates_keep_legacy_version_matching() {
+        let mut package = build_packages(&AppState::default(), &Catalog::default(), &[folder("Single", &[], None)]).pop().unwrap();
+        apply_remote(&mut package, remote("v1.0"), None);
+        assert_eq!(package.status, "ok");
+        assert!(!package.update_available);
+        apply_remote(&mut package, remote("1.1"), None);
+        assert_eq!(package.status, "update");
+        assert!(package.update_available);
     }
 
     #[test]

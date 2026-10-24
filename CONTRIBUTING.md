@@ -31,6 +31,7 @@ An entry looks like this:
 | `id` | yes | kebab-case, unique |
 | `name` | yes | display name |
 | `folders` | yes | top-level folders the zip installs into `Interface\AddOns`. Used to recognise what's already on disk. |
+| `group_required_dependencies` | no | group the first folder's direct required dependencies into this addon; defaults to `false`. See below. |
 | `github` | one source | `owner/repo` that publishes GitHub Releases. Preferred: no key, no rate limit when the release has a `release.json` (the BigWigs packager makes one). |
 | `wago` | one source | Wago Addons project id. Users need their own free Wago key. |
 | `wowi` | one source | WoWInterface file id. |
@@ -41,6 +42,16 @@ An entry looks like this:
 | `desc`, `category`, `url` | no | shown in Browse |
 | `notice` | no | one short line (160 chars) shown in amber on the installed row. For "remove this once X is fixed" situations. |
 | `added` | no | `YYYY-MM-DD` the entry was added. Feeds "New in the catalogue" when nothing is featured. |
+
+Set `group_required_dependencies: true` only when the download bundles the
+first folder's required dependencies, as Questie does with QuestieDB. Keep those
+dependencies out of `folders` so they do not identify the addon on their own.
+When the first folder is present, its direct `Dependencies` / `RequiredDeps`
+join the package unless another managed or identified package owns them.
+This opt-in skips optional dependencies, does not follow dependency chains, and
+leaves dependencies claimed by multiple opted-in packages unassigned. Existing
+module grouping still applies.
+This controls grouping only; update checks still use the source's package version.
 
 Rules:
 
