@@ -11,6 +11,7 @@
 
 use anyhow::{anyhow, Context};
 use futures_util::StreamExt;
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -241,7 +242,12 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
 
 /// Extract `zip_path` and move its addon folders into `addons_dir`,
 /// replacing same-named folders. Returns the folder names installed.
-pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> {
+/// `protected_folders` maps lowercase folder names to their owning package.
+pub fn place(
+    zip_path: &Path,
+    addons_dir: &Path,
+    protected_folders: &HashMap<String, String>,
+) -> anyhow::Result<Vec<String>> {
     fs::create_dir_all(addons_dir)?;
     let work = addons_dir.join(TMP_DIR).join(unique());
     let extract_dir = work.join("x");
@@ -256,7 +262,22 @@ pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> 
         let files = safety_scan(&extract_dir)?;
         crate::logi!("zip ok: {} files, no executables", files);
 
-        let sources = addon_dirs(&extract_dir)?;
+        // Resolve every final target before moving any installed folder aside.
+        let sources: Vec<(PathBuf, String)> = addon_dirs(&extract_dir)?
+            .into_iter()
+            .map(|src| {
+                let original = src.file_name().ok_or_else(|| anyhow!("bad folder name"))?
+                    .to_string_lossy().to_string();
+                let name = canonical_name(&src).unwrap_or(original);
+                if name.starts_with('.') || name.contains("..") {
+                    anyhow::bail!("refusing suspicious folder name {name}");
+                }
+                if let Some(owner) = protected_folders.get(&name.to_ascii_lowercase()) {
+                    anyhow::bail!("cannot replace addon folder {name}: it belongs to {owner}");
+                }
+                Ok((src, name))
+            })
+            .collect::<anyhow::Result<_>>()?;
         let mut moved: Vec<(PathBuf, PathBuf)> = Vec::new(); // (target, backup)
         let mut installed = Vec::new();
 
@@ -267,24 +288,7 @@ pub fn place(zip_path: &Path, addons_dir: &Path) -> anyhow::Result<Vec<String>> 
             }
         };
 
-        for mut src in sources {
-            let mut name = src
-                .file_name()
-                .ok_or_else(|| anyhow!("bad folder name"))?
-                .to_string_lossy()
-                .to_string();
-            if let Some(wanted) = canonical_name(&src) {
-                if wanted != name {
-                    let renamed = src.with_file_name(&wanted);
-                    fs::rename(&src, &renamed).with_context(|| format!("rename {name} to {wanted}"))?;
-                    crate::logi!("folder {name} renamed to {wanted} (its .toc name)");
-                    src = renamed;
-                    name = wanted;
-                }
-            }
-            if name.starts_with('.') || name.contains("..") {
-                anyhow::bail!("refusing suspicious folder name {name}");
-            }
+        for (src, name) in sources {
             let target = addons_dir.join(&name);
             let backup = backup_dir.join(&name);
             if target.exists() {
@@ -331,6 +335,88 @@ pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<V
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn addon_zip(root: &Path, files: &[(&str, &str)]) -> PathBuf {
+        fs::create_dir_all(root).unwrap();
+        let path = root.join("release.zip");
+        let mut archive = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        for (name, contents) in files {
+            archive.start_file(*name, zip::write::SimpleFileOptions::default()).unwrap();
+            archive.write_all(contents.as_bytes()).unwrap();
+        }
+        archive.finish().unwrap();
+        path
+    }
+
+    #[test]
+    fn protected_folder_prevents_changes_to_every_installed_folder() {
+        let root = std::env::temp_dir().join(format!("af-owned-{}", unique()));
+        let addons = root.join("AddOns");
+        for name in ["AAddon", "ZDatabase"] {
+            fs::create_dir_all(addons.join(name)).unwrap();
+            fs::write(addons.join(name).join("keep.lua"), format!("original {name}")).unwrap();
+        }
+        let zip = addon_zip(&root, &[
+            ("AAddon/AAddon.toc", "## Version: 2\n"),
+            ("AAddon/new.lua", "new primary"),
+            ("ZDATABASE/ZDatabase.toc", "## Version: 2\n"),
+            ("ZDATABASE/new.lua", "new database"),
+        ]);
+        let protected = HashMap::from([("zdatabase".into(), "github:author/Database".into())]);
+        let error = place(&zip, &addons, &protected).unwrap_err().to_string();
+        assert!(error.contains("ZDATABASE"), "{error}");
+        assert!(error.contains("github:author/Database"), "{error}");
+        for name in ["AAddon", "ZDatabase"] {
+            assert_eq!(fs::read_to_string(addons.join(name).join("keep.lua")).unwrap(), format!("original {name}"));
+            assert!(!addons.join(name).join("new.lua").exists());
+            assert!(!addons.join(name).join(format!("{name}.toc")).exists());
+        }
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn ownership_guard_checks_the_canonical_source_archive_name() {
+        let root = std::env::temp_dir().join(format!("af-owned-canon-{}", unique()));
+        let addons = root.join("AddOns");
+        fs::create_dir_all(addons.join("SharedData")).unwrap();
+        fs::write(addons.join("SharedData").join("keep.lua"), "keep database").unwrap();
+        let zip = addon_zip(&root, &[
+            ("Project-1.2/SharedData_Forever.toc", "## Version: 2\n"),
+        ]);
+        let protected = HashMap::from([("shareddata".into(), "folder:SharedData".into())]);
+        let error = place(&zip, &addons, &protected).unwrap_err().to_string();
+        assert!(error.contains("SharedData"), "{error}");
+        assert!(error.contains("folder:SharedData"), "{error}");
+        assert_eq!(fs::read_to_string(addons.join("SharedData").join("keep.lua")).unwrap(), "keep database");
+        assert!(!addons.join("SharedData").join("SharedData_Forever.toc").exists());
+        assert!(!addons.join("Project-1.2").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn addon_folders_are_installed_under_canonical_names() {
+        let root = std::env::temp_dir().join(format!("af-folders-{}", unique()));
+        let addons = root.join("AddOns");
+        fs::create_dir_all(addons.join("Core")).unwrap();
+        fs::write(addons.join("Core").join("old.lua"), "old primary").unwrap();
+        let zip = addon_zip(&root, &[
+            ("Bundle-1.2/Core-2.0/Core_Forever.toc", "## Version: 2\n"),
+            ("Bundle-1.2/Core-2.0/new.lua", "new primary"),
+            ("Bundle-1.2/Data/Data.toc", "## Version: 3\n"),
+            ("Bundle-1.2/Data/new.lua", "new database"),
+        ]);
+        let mut installed = place(&zip, &addons, &HashMap::new()).unwrap();
+        installed.sort();
+        assert_eq!(installed, vec!["Core", "Data"]);
+        assert_eq!(fs::read_to_string(addons.join("Core").join("Core_Forever.toc")).unwrap(), "## Version: 2\n");
+        assert_eq!(fs::read_to_string(addons.join("Data").join("Data.toc")).unwrap(), "## Version: 3\n");
+        assert_eq!(fs::read_to_string(addons.join("Core").join("new.lua")).unwrap(), "new primary");
+        assert_eq!(fs::read_to_string(addons.join("Data").join("new.lua")).unwrap(), "new database");
+        assert!(!addons.join("Core").join("old.lua").exists());
+        assert!(!addons.join("Core-2.0").exists());
+        assert!(!addons.join("Bundle-1.2").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     /// ForeverSVFix puts a directory link inside addon folders that points at
     /// the user's SavedVariables. Replacing or cleaning up an addon folder must
