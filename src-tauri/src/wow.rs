@@ -6,6 +6,9 @@ use serde::Serialize;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod detection;
+pub use detection::detect_installations;
+
 /// Interface numbers that mean "WoW: Forever" (1.60.x -> 160xx).
 pub const FOREVER_INTERFACE_RANGE: std::ops::RangeInclusive<u32> = 16000..=16999;
 
@@ -143,28 +146,15 @@ fn root_dirs() -> Vec<PathBuf> {
     Vec::new()
 }
 
-/// Scan the usual places for `World of Warcraft\_*_` product folders.
+/// Find existing clients from Battle.net metadata and conventional locations.
 pub fn find_installs() -> Vec<WowInstall> {
-    let mut found = Vec::new();
-    for root in root_dirs() {
-        let Ok(rd) = fs::read_dir(&root) else { continue };
-        for entry in rd.flatten() {
-            let p = entry.path();
-            let name = entry.file_name().to_string_lossy().to_string();
-            if p.is_dir() && name.starts_with('_') && name.ends_with('_') {
-                if let Some(i) = describe_install(&p) {
-                    found.push(i);
-                }
-            }
-        }
-    }
+    let mut found = detect_installations();
     // Forever first, then the rest, stable by path.
     found.sort_by(|a, b| {
         (a.flavor != "forever")
             .cmp(&(b.flavor != "forever"))
             .then(a.path.cmp(&b.path))
     });
-    found.dedup_by(|a, b| a.path.eq_ignore_ascii_case(&b.path));
     found
 }
 
