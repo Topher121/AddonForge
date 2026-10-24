@@ -187,6 +187,8 @@ pub struct AddonFolder {
     pub dependencies: Vec<String>,
     /// `## X-Part-Of: Parent` — this folder is a module of another addon.
     pub part_of: Option<String>,
+    /// `## Group: Parent` — a grouping hint, used only with a required dependency.
+    pub group: Option<String>,
     /// `## IconTexture:` — a file path under Interface\AddOns\ or a game-internal icon name.
     pub icon_texture: Option<String>,
 }
@@ -309,6 +311,11 @@ fn parse_toc(path: &Path, into: &mut AddonFolder) -> bool {
                     into.part_of = Some(val.to_string());
                 }
             }
+            "group" => {
+                if into.group.is_none() {
+                    into.group = Some(val.to_string());
+                }
+            }
             "icontexture" => {
                 if into.icon_texture.is_none() {
                     into.icon_texture = Some(val.to_string());
@@ -379,6 +386,29 @@ pub fn scan_addons(install: &Path) -> Vec<AddonFolder> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scans_group_with_required_dependencies_and_prefers_forever_metadata() {
+        let root = std::env::temp_dir().join(format!("af-group-toc-{}", std::process::id()));
+        let addon = root.join("Interface").join("AddOns").join("EllesmereUIActionBars");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(
+            addon.join("EllesmereUIActionBars_Camelot.toc"),
+            "## Interface: 16001\n## Group: \n## gRoUp:  EllesmereUI  \n\
+             ## RequiredDeps: EllesmereUI\n## OptionalDeps: OptionalAddon\n",
+        ).unwrap();
+        fs::write(
+            addon.join("EllesmereUIActionBars.toc"),
+            "## Group: OtherSuite\n## Dependencies: LibStub\n",
+        ).unwrap();
+
+        let folders = scan_addons(&root);
+        assert_eq!(folders.len(), 1);
+        assert_eq!(folders[0].group.as_deref(), Some("EllesmereUI"));
+        assert_eq!(folders[0].dependencies, vec!["EllesmereUI", "LibStub"]);
+        assert!(folders[0].part_of.is_none());
+        fs::remove_dir_all(&root).unwrap();
+    }
 
     #[test]
     fn live_forever_folder_is_recognised() {
