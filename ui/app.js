@@ -757,7 +757,7 @@ async function loadSettings() {
   $("state-file").textContent = settings.state_file;
   $("install-path").value = settings.install_path || "";
   $("wago-link").dataset.url = settings.wago_key_url;
-  $("wago-status").textContent = settings.has_wago_key ? "A key is saved." : "No key saved. Wago-only addons will show as \"Needs Wago key\".";
+  $("wago-status").textContent = settings.has_wago_key ? "A key is saved." : "No key saved. Wago-only addons show as \"Needs Wago key\" and stay link-only.";
   $("pref-prerelease").checked = !!settings.allow_prerelease;
   $("catalog-info").textContent = settings.catalog_count
     ? `${settings.catalog_count} addons · ${settings.catalog_source === "remote" ? "latest from GitHub" : "built-in copy (GitHub copy unreachable)"}${settings.catalog_updated ? " · " + settings.catalog_updated : ""}`

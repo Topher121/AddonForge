@@ -1,13 +1,14 @@
 //! Wago Addons (addons.wago.io).
 //!
-//! Wago's external API needs an API key. Keys are free from
-//! https://addons.wago.io/account/apikeys and the user pastes their own into
+//! Wago's external API needs an API key. Since October 2026 keys that work
+//! for addon updaters are only issued to Wago Patreon supporters (the
+//! developer-page keys publish only). The user pastes their own into
 //! Settings; it is stored locally and only ever sent to addons.wago.io.
 
 use super::Remote;
 use serde_json::Value;
 
-pub const KEY_URL: &str = "https://addons.wago.io/account/apikeys";
+pub const KEY_URL: &str = "https://addons.wago.io/patreon";
 
 pub async fn resolve(
     client: &reqwest::Client,

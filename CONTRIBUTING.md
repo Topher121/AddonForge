@@ -32,7 +32,7 @@ An entry looks like this:
 | `name` | yes | display name |
 | `folders` | yes | top-level folders the zip installs into `Interface\AddOns`. Used to recognise what's already on disk. |
 | `github` | one source | `owner/repo` that publishes GitHub Releases. Preferred: no key, no rate limit when the release has a `release.json` (the BigWigs packager makes one). |
-| `wago` | one source | Wago Addons project id. Users need their own free Wago key. |
+| `wago` | one source | Wago Addons project id. Users need their own Wago key, which Wago only gives to Patreon supporters, so prefer a GitHub source where one exists. |
 | `wowi` | one source | WoWInterface file id. |
 | `tukui` | one source | TukUI slug (`elvui`, `tukui`). |
 | `curse` | no | CurseForge project id. Link only, never downloaded. An entry with only `curse` is a link-only entry so people know where the addon lives. |
