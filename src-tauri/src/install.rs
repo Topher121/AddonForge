@@ -11,7 +11,7 @@
 
 use anyhow::{anyhow, Context};
 use futures_util::StreamExt;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -242,7 +242,8 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
 
 /// Extract `zip_path` and move its addon folders into `addons_dir`,
 /// replacing same-named folders. Returns the folder names installed.
-/// `protected_folders` maps lowercase folder names to their owning package.
+/// `protected_folders` maps lowercase folder names to their owning package;
+/// ownership only prevents replacing folders that are still present on disk.
 pub fn place(
     zip_path: &Path,
     addons_dir: &Path,
@@ -262,6 +263,10 @@ pub fn place(
         let files = safety_scan(&extract_dir)?;
         crate::logi!("zip ok: {} files, no executables", files);
 
+        // Compare actual names case-insensitively, including on case-sensitive volumes.
+        let on_disk: HashSet<String> = fs::read_dir(addons_dir)?
+            .map(|entry| entry.map(|e| e.file_name().to_string_lossy().to_ascii_lowercase()))
+            .collect::<std::io::Result<_>>()?;
         // Resolve every final target before moving any installed folder aside.
         let sources: Vec<(PathBuf, String)> = addon_dirs(&extract_dir)?
             .into_iter()
@@ -272,8 +277,11 @@ pub fn place(
                 if name.starts_with('.') || name.contains("..") {
                     anyhow::bail!("refusing suspicious folder name {name}");
                 }
-                if let Some(owner) = protected_folders.get(&name.to_ascii_lowercase()) {
-                    anyhow::bail!("cannot replace addon folder {name}: it belongs to {owner}");
+                let lower = name.to_ascii_lowercase();
+                if on_disk.contains(&lower) {
+                    if let Some(owner) = protected_folders.get(&lower) {
+                        anyhow::bail!("cannot replace addon folder {name}: it belongs to {owner}");
+                    }
                 }
                 Ok((src, name))
             })
@@ -390,6 +398,41 @@ mod tests {
         assert_eq!(fs::read_to_string(addons.join("SharedData").join("keep.lua")).unwrap(), "keep database");
         assert!(!addons.join("SharedData").join("SharedData_Forever.toc").exists());
         assert!(!addons.join("Project-1.2").exists());
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn missing_protected_folder_can_be_installed_but_is_protected_once_present() {
+        let root = std::env::temp_dir().join(format!("af-owned-missing-{}", unique()));
+        let addons = root.join("AddOns");
+        let protected = HashMap::from([("shareddata".into(), "github:author/Database".into())]);
+        let zip = addon_zip(&root, &[
+            ("Project-1.2/SharedData_Forever.toc", "## Version: 1\n"),
+            ("Project-1.2/data.lua", "original database"),
+        ]);
+        let installed = place(&zip, &addons, &protected).unwrap();
+        assert_eq!(installed, vec!["SharedData"]);
+        assert_eq!(fs::read_to_string(addons.join("SharedData").join("SharedData_Forever.toc")).unwrap(), "## Version: 1\n");
+        assert_eq!(fs::read_to_string(addons.join("SharedData").join("data.lua")).unwrap(), "original database");
+        assert!(!addons.join("Project-1.2").exists());
+
+        fs::create_dir_all(addons.join("AAddon")).unwrap();
+        fs::write(addons.join("AAddon").join("keep.lua"), "original primary").unwrap();
+        let zip = addon_zip(&root, &[
+            ("AAddon/AAddon.toc", "## Version: 2\n"),
+            ("AAddon/new.lua", "new primary"),
+            ("Project-2.0/SharedData_Forever.toc", "## Version: 2\n"),
+            ("Project-2.0/data.lua", "new database"),
+        ]);
+        let error = place(&zip, &addons, &protected).unwrap_err().to_string();
+        assert!(error.contains("SharedData"), "{error}");
+        assert!(error.contains("github:author/Database"), "{error}");
+        assert_eq!(fs::read_to_string(addons.join("AAddon").join("keep.lua")).unwrap(), "original primary");
+        assert!(!addons.join("AAddon").join("new.lua").exists());
+        assert!(!addons.join("AAddon").join("AAddon.toc").exists());
+        assert_eq!(fs::read_to_string(addons.join("SharedData").join("SharedData_Forever.toc")).unwrap(), "## Version: 1\n");
+        assert_eq!(fs::read_to_string(addons.join("SharedData").join("data.lua")).unwrap(), "original database");
+        assert!(!addons.join("Project-2.0").exists());
         fs::remove_dir_all(&root).unwrap();
     }
 
