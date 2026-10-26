@@ -195,23 +195,12 @@ fn client_type(product: &str) -> Option<&'static str> {
 }
 
 fn executable_present(path: &Path) -> bool {
-    if [
-        "Wow.exe",
-        "WowB.exe",
-        "WowT.exe",
-        "WowClassic.exe",
-        "WowClassicB.exe",
-        "WowClassicT.exe",
-        "Wow-arm64.exe",
-        "WowB-arm64.exe",
-        "WowT-arm64.exe",
-        "WowClassic-arm64.exe",
-        "WowClassicB-arm64.exe",
-        "WowClassicT-arm64.exe",
-    ]
-    .iter()
-    .any(|name| path.join(name).is_file())
-    {
+    if fs::read_dir(path).is_ok_and(|files| {
+        files.flatten().any(|file| {
+            let name = file.file_name().to_string_lossy().to_ascii_lowercase();
+            name.starts_with("wow") && name.ends_with(".exe") && file.path().is_file()
+        })
+    }) {
         return true;
     }
     [
@@ -455,6 +444,34 @@ mod tests {
         assert!(found.iter().any(|i| i.flavor == "forever"));
         assert!(found.iter().any(|i| i.flavor == "retail"));
         assert_eq!(client_type("wow_classicsoup"), None);
+    }
+
+    #[test]
+    fn executable_pattern_accepts_new_client_names_and_mixed_case() {
+        for name in ["WowForever.exe", "WowFuture-arm64.exe", "wOwFuture.EXE"] {
+            let fixture = Fixture::new();
+            let path = fixture.client("_forever_", name);
+            let found = clients_at(vec![(path.clone(), None)]);
+            assert_eq!(found.len(), 1, "{name}");
+            assert_eq!(
+                found[0].path,
+                readable_path(&fs::canonicalize(path).unwrap())
+            );
+            assert_eq!(found[0].flavor, "forever");
+        }
+    }
+
+    #[test]
+    fn executable_pattern_rejects_near_misses_and_directories() {
+        for name in ["NotWow.exe", "Wow.exe.bak", "Wow.dll", "bin/Wow.exe"] {
+            let fixture = Fixture::new();
+            let path = fixture.client("_forever_", name);
+            assert!(clients_at(vec![(path, None)]).is_empty(), "{name}");
+        }
+        let fixture = Fixture::new();
+        let path = fixture.0.join("_forever_");
+        fs::create_dir_all(path.join("Wow.exe")).unwrap();
+        assert!(clients_at(vec![(path, None)]).is_empty());
     }
 
     #[test]
