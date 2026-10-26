@@ -310,7 +310,7 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         let (status, note) = match &source {
             Some(Source::Wago(_)) if !has_wago => (
                 "no-key".to_string(),
-                "On Wago: add your free Wago API key in Settings to update".to_string(),
+                "On Wago: updating needs a Wago key (Patreon supporters only), see Settings".to_string(),
             ),
             Some(_) => ("unknown".to_string(), String::new()),
             None if curse_id.is_some() => (
@@ -884,7 +884,7 @@ async fn install_catalog(
     let src = pick_source(Some(&e), &AddonFolder::default(), has_wago, None)
         .ok_or_else(|| "This catalogue entry has no downloadable source".to_string())?;
     if matches!(src, Source::Wago(_)) && !has_wago {
-        return Err("This addon is on Wago: add your free Wago API key in Settings first".into());
+        return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
     }
     let key = format!("cat:{}", e.id);
     install_from(&app, &key, &src, e.asset_hint.as_deref(), allow_non_forever.unwrap_or(false)).await?;
