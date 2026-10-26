@@ -13,7 +13,7 @@ use catalog::{Catalog, CatalogEntry, Stats};
 use serde::{Deserialize, Serialize};
 use sources::{normalize_version, Remote, ResolveOpts, Source};
 use state::{AppState, Installed};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tauri::State;
@@ -491,7 +491,7 @@ fn apply_remote(pkg: &mut Package, mut remote: Remote, vouched: Option<bool>) {
 
 fn protected_package_folders(st: &AppState, packages: &[Package], key: &str) -> HashMap<String, String> {
     let mut protected = HashMap::new();
-    // Keep recorded ownership even if a separately managed folder is missing.
+    // Include recorded claims; the installer only enforces them for existing folders.
     for (owner, rec) in &st.installed {
         if owner != key {
             for folder in &rec.folders {
@@ -507,6 +507,19 @@ fn protected_package_folders(st: &AppState, packages: &[Package], key: &str) -> 
         }
     }
     protected
+}
+
+fn record_install(st: &mut AppState, key: &str, rec: &Installed) {
+    let folders: HashSet<String> = rec.folders.iter().map(|f| f.to_ascii_lowercase()).collect();
+    // Successful placement transfers any stale claims to the new owner.
+    st.installed.retain(|owner, previous| {
+        if owner == key || previous.folders.is_empty() {
+            return true;
+        }
+        previous.folders.retain(|f| !folders.contains(&f.to_ascii_lowercase()));
+        !previous.folders.is_empty()
+    });
+    st.installed.insert(key.to_string(), rec.clone());
 }
 
 async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
@@ -761,7 +774,7 @@ async fn install_from(
         installed_at: state::now_secs(),
     };
     let mut st = app.state.lock().await;
-    st.installed.insert(key.to_string(), rec.clone());
+    record_install(&mut st, key, &rec);
     st.save().map_err(err)?;
     logi!("installed {key} {} ({} folders)", rec.version, rec.folders.len());
     Ok(rec)
@@ -1851,19 +1864,87 @@ mod tests {
     }
 
     #[test]
-    fn absent_separately_owned_dependency_still_protects_its_folder() {
+    fn installing_missing_dependencies_transfers_ownership_and_allows_later_updates() {
+        use std::fs;
+        use std::io::Write;
+
+        let root = std::env::temp_dir().join(format!("af-transfer-{}-{}", std::process::id(), state::now_secs()));
+        let addons = root.join("Interface").join("AddOns");
+        fs::create_dir_all(addons.join("OtherData")).unwrap();
+        fs::write(addons.join("OtherData").join("OtherData.toc"), "## Version: 7.1\n").unwrap();
+        fs::write(addons.join("OtherData").join("keep.lua"), "keep other data").unwrap();
+        let partial_owner = "github:provider/AtlasData";
+        let stale_owner = "folder:AtlasLayout";
         let mut state = AppState::default();
-        state.installed.insert("folder:AtlasData".into(), Installed {
+        state.installed.insert(partial_owner.into(), Installed {
             source: "github".into(), source_id: "provider/AtlasData".into(),
-            version: "7.1".into(), folders: vec!["AtlasData".into()],
-            ..Default::default()
+            version: "provider-7.1".into(), folders: vec!["AtlasData".into(), "OtherData".into()],
+            installed_at: 11,
         });
-        let packages = build_packages(&state, &dependency_catalog(), &dependency_folders()[..1]);
-        assert_eq!(packages.len(), 1);
-        assert_eq!(packages[0].missing_deps[0].folder, "AtlasData");
-        let protected = protected_package_folders(&state, &packages, "cat:atlas");
-        assert_eq!(protected.get("atlasdata").map(String::as_str), Some("folder:AtlasData"));
-        assert!(!protected.contains_key("atlas"));
+        state.installed.insert(stale_owner.into(), Installed {
+            folders: vec!["aTlAsLaYoUt".into()], ..Default::default()
+        });
+        state.installed.insert("folder:Absent".into(), Installed {
+            folders: vec!["Absent".into()], ..Default::default()
+        });
+        state.pinned.insert(stale_owner.into());
+        state.pinned.insert(partial_owner.into());
+        state.ignored.insert(stale_owner.into());
+        state.ignored.insert("folder:Absent".into());
+        let pinned = state.pinned.clone();
+        let ignored = state.ignored.clone();
+        let catalog = dependency_catalog();
+
+        for (release, data_version) in [("Atlas-v2.4+v7.1", "7.1"), ("Atlas-v2.4+v7.2", "7.2")] {
+            let packages = build_packages(&state, &catalog, &wow::scan_addons(&root));
+            let protected = protected_package_folders(&state, &packages, "cat:atlas");
+            let zip_path = root.join("release.zip");
+            let mut archive = zip::ZipWriter::new(fs::File::create(&zip_path).unwrap());
+            for (name, contents) in [
+                ("Atlas/Atlas.toc", "## Version: 2.4\n## RequiredDeps: AtlasData, AtlasLayout\n".into()),
+                ("AtlasData/AtlasData.toc", format!("## Version: {data_version}\n")),
+                ("AtlasData/data.lua", format!("database {data_version}")),
+                ("AtlasLayout/AtlasLayout.toc", "## Version: 1\n".into()),
+            ] {
+                archive.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+                archive.write_all(contents.as_bytes()).unwrap();
+            }
+            archive.finish().unwrap();
+            let mut folders = install::place(&zip_path, &addons, &protected).unwrap();
+            folders.sort();
+            assert_eq!(folders, vec!["Atlas", "AtlasData", "AtlasLayout"]);
+            assert_eq!(fs::read_to_string(addons.join("AtlasData").join("data.lua")).unwrap(), format!("database {data_version}"));
+            let installed = Installed {
+                source: "github".into(), source_id: "author/Atlas".into(),
+                version: release.into(), folders, installed_at: 22,
+            };
+            record_install(&mut state, "cat:atlas", &installed);
+
+            let remaining = &state.installed[partial_owner];
+            assert_eq!(remaining.folders, vec!["OtherData"]);
+            assert_eq!(remaining.source, "github");
+            assert_eq!(remaining.source_id, "provider/AtlasData");
+            assert_eq!(remaining.version, "provider-7.1");
+            assert_eq!(remaining.installed_at, 11);
+            assert!(!state.installed.contains_key(stale_owner));
+            assert_eq!(state.installed["folder:Absent"].folders, vec!["Absent"]);
+            assert_eq!(state.installed.len(), 3);
+            assert_eq!(state.pinned, pinned);
+            assert_eq!(state.ignored, ignored);
+            assert_eq!(fs::read_to_string(addons.join("OtherData").join("keep.lua")).unwrap(), "keep other data");
+
+            let packages = build_packages(&state, &catalog, &wow::scan_addons(&root));
+            assert_eq!(packages.len(), 2);
+            let mut bundle = packages.into_iter().find(|p| p.key == "cat:atlas").unwrap();
+            assert_eq!(bundle.folders, vec!["Atlas", "AtlasData", "AtlasLayout"]);
+            assert_eq!(bundle.source, Some(Source::Github("author/Atlas".into())));
+            assert_eq!(bundle.installed_version.as_deref(), Some(release));
+            assert!(bundle.missing_deps.is_empty());
+            apply_remote(&mut bundle, remote(release), None);
+            assert!(!bundle.update_available);
+            assert_eq!(bundle.status, "ok");
+        }
+        fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
