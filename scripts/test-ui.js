@@ -67,9 +67,36 @@ assert.match(element('curse-list').innerHTML, /TomTom &lt;x&gt;/);
 assert.match(element('curse-list').innerHTML, /data-act="curse-install"/);
 assert.match(element('curse-list').innerHTML, /link only/);
 assert.match(element('curse-list').innerHTML, /installed/);
-assert.equal(String(element('curse-title').textContent), 'CurseForge: 3 results for "tom"');
+assert.equal(String(element('curse-title').textContent), 'More from CurseForge');
+run(`renderCurseResults([], 'zzz');`);
+assert.equal(String(element('curse-title').textContent), 'Nothing more on CurseForge for "zzz"');
 run(`renderCurseResults([], '');`);
 assert.equal(element('curse-list').innerHTML, '');
+// The one search box: owner/repo and GitHub links are offered as a GitHub install.
+assert.equal(run("githubRepoFrom('Owner/Repo')"), 'Owner/Repo');
+assert.equal(run("githubRepoFrom('https://github.com/BigWigsMods/BigWigs/releases')"), 'BigWigsMods/BigWigs');
+assert.equal(run("githubRepoFrom('github.com/a/b.git')"), 'a/b');
+assert.equal(run("githubRepoFrom('tomtom')"), null);
+assert.equal(run("githubRepoFrom('a/b/c')"), null);
+// Source picker: one source is a link, several become a select, locked/keyless ones stay out.
+run(`settings = { has_curse: true, has_wago_key: false };
+catalog = [
+  { id:'one', name:'One', github:'x/one' },
+  { id:'two', name:'Two', github:'x/two', curse: 7, wago: 'w' },
+  { id:'locked', name:'Locked', curse: 8, curse_locked: true },
+  { id:'wagoonly', name:'WagoOnly', wago: 'w2' },
+];
+document.getElementById('browse-filter').value = ''; renderCatalog();`);
+assert.equal(run("installSources(catalog[0]).length"), 1);
+assert.equal(run("installSources(catalog[1]).map(s => s.kind).join()"), 'github,curse');
+assert.equal(run("installSources(catalog[2]).length"), 0);
+assert.equal(run("installSources(catalog[3]).length"), 0);
+run(`settings.has_wago_key = true;`);
+assert.equal(run("installSources(catalog[1]).map(s => s.kind).join()"), 'github,curse,wago');
+assert.match(element('browse-list').innerHTML, /<select class="src-pick"[^>]*><option value="github">GitHub/);
+assert.match(element('browse-list').innerHTML, /link only/);
+assert.match(element('browse-list').innerHTML, /needs Wago key/);
+run(`settings = null; catalog = [];`);
 run(`packages = []; renderInstalled()`);
 assert.equal(String(element('stat-updates').textContent), '0');
 assert.match(element('installed-list').innerHTML, /Discover addons/);

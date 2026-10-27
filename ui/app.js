@@ -431,29 +431,57 @@ function sortedCatalog(rows) {
   return rows.sort(name);
 }
 
+// Every place this entry can be installed from, best first. The row shows a
+// picker when there is more than one so the user chooses where it comes from.
+function installSources(e) {
+  const out = [];
+  if (e.github) out.push({ kind: "github", label: "GitHub", title: `GitHub \u00b7 ${e.github}`, url: "https://github.com/" + e.github });
+  if (e.curse && !e.curse_locked && settings?.has_curse) out.push({ kind: "curse", label: "CurseForge", url: "https://www.curseforge.com/projects/" + e.curse });
+  if (e.wago && settings?.has_wago_key) out.push({ kind: "wago", label: "Wago", url: "https://addons.wago.io/addons/" + e.wago });
+  if (e.wowi) out.push({ kind: "wowi", label: "WoWInterface", url: "https://www.wowinterface.com/downloads/info" + e.wowi });
+  if (e.tukui) out.push({ kind: "tukui", label: "TukUI", url: "https://www.tukui.org/addons.php?id=" + e.tukui });
+  return out;
+}
+
+// "owner/repo" or a github.com link typed into the search box.
+function githubRepoFrom(text) {
+  const t = text.trim();
+  let m = t.match(/^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[\/#?].*)?$/i);
+  if (!m) m = t.match(/^([\w.-]+)\/([\w.-]+)$/);
+  return m ? `${m[1]}/${m[2]}` : null;
+}
+
 function renderCatalog() {
   const q = $("browse-filter").value.trim().toLowerCase();
   const rows = sortedCatalog(catalog.filter((e) => !q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q)));
   $("browse-list").innerHTML = rows.length
     ? rows
         .map((e) => {
-          const src = e.github ? `GitHub · ${e.github}` : e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge only";
+          const srcs = installSources(e);
           const fv = e.forever === true ? `<span class="badge forever">Forever</span>` : e.forever === false ? `<span class="badge not-forever">No Forever build</span>` : "";
-          const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key) || (e.curse && !e.curse_locked && settings?.has_curse);
-          const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
+          const needsKey = e.wago && !srcs.length && !settings?.has_wago_key;
+          const srcCell = srcs.length > 1
+            ? `<select class="src-pick" aria-label="Install from">${srcs.map((s) => `<option value="${s.kind}">${esc(s.label)}</option>`).join("")}</select>`
+            : srcs.length === 1
+              ? `<a href="#" data-url="${esc(srcs[0].url)}">${esc(srcs[0].title || srcs[0].label)}</a>`
+              : `<a href="#" data-url="${esc(entryUrl(e) || "#")}">${esc(e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge only")}</a>`;
           return `<div class="item" data-id="${esc(e.id)}">
             <div class="c-name clickable" data-detail="${esc(e.id)}" title="Details">${iconTile("c", e.id, e.name)}<div class="nm-wrap"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div></div>
             <div class="c-cat muted">${esc(e.category || "")}</div>
             <div class="c-dl" title="${e.downloads != null ? esc(e.downloads.toLocaleString() + " downloads, all time, counted on " + (e.stat_source === "wowi" ? "WoWInterface" : "GitHub")) : "No download count for this source"}">${e.downloads != null ? `<b>${fmtCount(e.downloads)}</b>` : `<span class="muted">\u2014</span>`}${e.updated_at ? `<div class="sub-line">${ago(e.updated_at)}</div>` : ""}</div>
-            <div class="c-src"><a href="#" data-url="${esc(e.url || (e.github ? "https://github.com/" + e.github : "#"))}">${esc(src)}</a></div>
+            <div class="c-src">${srcCell}</div>
             <div class="c-act">
-              ${canInstall ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">needs Wago key</span>` : `<span class="badge curse-only">link only</span>`}
+              ${srcs.length ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">needs Wago key</span>` : `<span class="badge curse-only">link only</span>`}
             </div>
           </div>`;
         })
         .join("")
-    : `<div class="empty">Nothing matches.</div>`;
-  $("browse-summary").textContent = `${rows.length} of ${catalog.length}`;
+    : `<div class="empty${q ? " slim" : ""}">${q ? "Nothing in the catalogue matches." : "Nothing here."}</div>`;
+  $("browse-summary").textContent = q ? `${rows.length} of ${catalog.length}` : `${catalog.length} addons`;
+  const repo = q ? githubRepoFrom($("browse-filter").value) : null;
+  $("gh-offer").classList.toggle("hidden", !repo);
+  if (repo) $("gh-offer-repo").textContent = repo;
+  scheduleCurseSearch($("browse-filter").value.trim());
   setBusy(busy);
 }
 
@@ -605,20 +633,25 @@ $("featured-list").addEventListener("click", async (e) => {
 });
 
 // ---------------------------------------------------------------- CurseForge search
+// Fed by the same search box as the catalogue. Projects already in the
+// catalogue are left out here because their catalogue row is the better one.
 let curseRows = [];
+let curseQuery = "";
+let curseSeq = 0;
+let curseTimer = null;
 function renderCurseResults(rows, query) {
   curseRows = rows;
+  curseQuery = query;
   const box = $("curse-results");
   if (!rows.length && !query) { box.classList.add("hidden"); $("curse-list").innerHTML = ""; return; }
-  $("curse-title").textContent = rows.length ? `CurseForge: ${rows.length} result${rows.length === 1 ? "" : "s"} for "${query}"` : `CurseForge: nothing for "${query}"`;
+  $("curse-title").textContent = rows.length ? `More from CurseForge` : `Nothing more on CurseForge for "${query}"`;
   $("curse-list").innerHTML = rows
     .map((r) => {
       const state = r.installed ? '<span class="badge ok">installed</span>'
         : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
         : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app">link only</span>`;
-      const listed = r.catalog_id ? ' <span class="badge forever" title="Also in the AddonForge catalogue">listed</span>' : "";
       return `<div class="item" data-id="${r.id}">
-        <div class="c-name"><div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a>${listed}<div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
+        <div class="c-name"><div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a><div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
         <div class="c-cat muted">${esc(r.authors)}</div>
         <div class="c-dl"><b>${fmtCount(r.downloads)}</b></div>
         <div class="c-act">${state}</div>
@@ -629,23 +662,40 @@ function renderCurseResults(rows, query) {
   setBusy(busy);
 }
 
-async function searchCurse() {
-  const q = $("curse-query").value.trim();
-  if (q.length < 2) return toast("Type at least two letters", true);
-  const btn = $("btn-curse-search");
-  btn.innerHTML = '<span class="spinner"></span> Searching';
+function scheduleCurseSearch(q) {
+  clearTimeout(curseTimer);
+  if (!settings?.has_curse || q.length < 2 || githubRepoFrom(q)) {
+    curseSeq++;
+    if (curseQuery || curseRows.length) renderCurseResults([], "");
+    return;
+  }
+  if (q === curseQuery) return;
+  curseTimer = setTimeout(() => searchCurse(q), 450);
+}
+
+async function searchCurse(q) {
+  const seq = ++curseSeq;
+  if (!q) q = $("browse-filter").value.trim();
+  if (q.length < 2) return;
+  $("curse-title").textContent = "Searching CurseForge\u2026";
+  $("curse-results").classList.remove("hidden");
   try {
     const rows = await invoke("curse_search", { query: q });
-    renderCurseResults(rows, q);
+    if (seq !== curseSeq) return;
+    renderCurseResults(rows.filter((r) => !r.catalog_id), q);
   } catch (err) {
+    if (seq !== curseSeq) return;
+    renderCurseResults([], "");
     toast(String(err), true);
-  } finally {
-    btn.textContent = "Search";
   }
 }
-$("btn-curse-search").onclick = searchCurse;
-$("curse-query").addEventListener("keydown", (e) => { if (e.key === "Enter") searchCurse(); });
-$("btn-curse-clear").onclick = () => { $("curse-query").value = ""; renderCurseResults([], ""); };
+$("browse-filter").addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  const q = $("browse-filter").value.trim();
+  if (githubRepoFrom(q)) return installGithub(false);
+  clearTimeout(curseTimer);
+  if (q !== curseQuery) searchCurse(q);
+});
 $("curse-list").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-act=curse-install]");
   if (!btn || busy) return;
@@ -658,7 +708,7 @@ $("curse-list").addEventListener("click", async (e) => {
     const p = await invoke("install_curse", { id, allowNonForever: false });
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     row.installed = true;
-    renderCurseResults(curseRows, $("curse-query").value.trim());
+    renderCurseResults(curseRows, curseQuery);
     await rescan(true);
     renderCatalog();
   } catch (err) {
@@ -666,7 +716,7 @@ $("curse-list").addEventListener("click", async (e) => {
       setBusy(false);
       const ok = await confirmModal(`<p><b>${esc(row.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">Install it anyway?</p>`, "Install anyway");
       if (ok) { try { await invoke("install_curse", { id, allowNonForever: true }); row.installed = true; } catch (e2) { toast(explainError(e2), true); } }
-      renderCurseResults(curseRows, $("curse-query").value.trim());
+      renderCurseResults(curseRows, curseQuery);
       await rescan(true);
       return;
     }
@@ -751,16 +801,16 @@ $("browse-list").addEventListener("click", async (e) => {
   if (d && !e.target.closest("a")) return openDetail(d.dataset.detail);
   const btn = e.target.closest("button[data-act=install]");
   if (!btn || busy) return;
-  const id = btn.closest(".item").dataset.id;
-  const entry = catalog.find((x) => x.id === id);
-  await installCatalog(entry, false);
+  const item = btn.closest(".item");
+  const entry = catalog.find((x) => x.id === item.dataset.id);
+  await installCatalog(entry, false, item.querySelector(".src-pick")?.value || null);
 });
 
-async function installCatalog(entry, allowNonForever) {
+async function installCatalog(entry, allowNonForever, source = null) {
   setBusy(true);
   btnState(entry.id, true);
   try {
-    const p = await invoke("install_catalog", { id: entry.id, allowNonForever });
+    const p = await invoke("install_catalog", { id: entry.id, allowNonForever, source });
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     entry.installed = true;
     for (const b of bundles) for (const a of b.addons) if (a.id === entry.id) a.installed = true;
@@ -773,7 +823,7 @@ async function installCatalog(entry, allowNonForever) {
       setBusy(false);
       btnState(entry.id, false);
       const ok = await confirmModal(`<p><b>${esc(entry.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">Install it anyway?</p>`, "Install anyway");
-      if (ok) return installCatalog(entry, true);
+      if (ok) return installCatalog(entry, true, source);
       return;
     }
     toast(explainError(err), true);
@@ -788,15 +838,15 @@ function btnState(id, working) {
 }
 
 async function installGithub(allowNonForever = false) {
-  const repo = $("gh-repo").value.trim();
-  if (!repo) return toast("Paste a GitHub repo first", true);
+  const repo = githubRepoFrom($("browse-filter").value);
+  if (!repo) return toast("Type a GitHub repo as owner/name or paste its link", true);
   setBusy(true);
   const btn = $("btn-gh-install");
   btn.innerHTML = '<span class="spinner"></span> Installing';
   try {
     const p = await invoke("install_github", { repo, allowNonForever });
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
-    $("gh-repo").value = "";
+    $("browse-filter").value = "";
     await rescan(true);
     loadCatalog(false);
   } catch (err) {
@@ -814,9 +864,6 @@ async function installGithub(allowNonForever = false) {
   }
 }
 $("btn-gh-install").onclick = () => installGithub(false);
-$("gh-repo").addEventListener("keydown", (e) => {
-  if (e.key === "Enter") installGithub(false);
-});
 
 // ---------------------------------------------------------------- settings
 async function loadSettings() {
@@ -840,7 +887,7 @@ async function loadSettings() {
     : "No game folder selected — choose one in Settings";
   $("install-line").classList.toggle("connected", !!settings.install);
   $("svfix-note").classList.toggle("hidden", !settings.svfix);
-  $("curse-row").classList.toggle("hidden", !settings.has_curse);
+  $("browse-filter").placeholder = settings.has_curse ? "Search addons, or type owner/repo from GitHub" : "Search the catalogue, or type owner/repo from GitHub";
   $("footer-open-folder").disabled = !settings.install;
 }
 
@@ -1077,7 +1124,7 @@ $("selfupdate-go").onclick = async () => {
   }
   loadCatalog(false);
   checkSelf(false);
-  if (settings?.start_tab?.startsWith("search:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); $("curse-query").value = settings.start_tab.slice(7); searchCurse(); }
+  if (settings?.start_tab?.startsWith("search:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); $("browse-filter").value = settings.start_tab.slice(7); renderCatalog(); clearTimeout(curseTimer); searchCurse(settings.start_tab.slice(7)); }
   else if (settings?.start_tab?.startsWith("detail:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); openDetail(settings.start_tab.slice(7)); }
   else if (settings?.start_tab === "guide") { document.querySelector(`.tab[data-tab="start"]`)?.click(); $("guide").open = true; }
   else if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();

@@ -62,7 +62,7 @@
       <p class="hint">Featuring is free and always will be. Authors: <a href="#" data-url="https://github.com/Topher121/AddonForge/issues/new?template=feature.yml">ask to be featured</a> and pick a week.</p>
     </div>
     <div class="toolbar">
-      <input id="browse-filter" type="search" placeholder="Filter the catalogue" aria-label="Search catalogue">
+      <input id="browse-filter" type="search" placeholder="Search addons" aria-label="Search addons" spellcheck="false">
       <label class="lbl" for="browse-sort">Sort</label>
       <select id="browse-sort" aria-label="Sort catalogue">
         <option value="name">Name</option>
@@ -73,29 +73,21 @@
       <span class="grow"></span>
       <button id="btn-catalog-refresh" class="btn">Refresh catalogue</button>
     </div>
-    <div class="toolbar sub curse-row hidden" id="curse-row">
-      <label for="curse-query" class="lbl">Search CurseForge</label>
-      <input id="curse-query" type="search" placeholder="Any Forever addon on CurseForge, e.g. TomTom" spellcheck="false">
-      <button id="btn-curse-search" class="btn">Search</button>
-      <span class="hint">Seven thousand Forever addons. Authors who only allow CurseForge's own app show as link only.</span>
-    </div>
-    <div id="curse-results" class="hidden">
-      <div class="section-title"><span id="curse-title">CurseForge results</span> <button id="btn-curse-clear" class="link small">Clear</button></div>
-      <div class="thead cols-curse" aria-hidden="true">
-        <span>Addon</span><span>By</span><span>Downloads</span><span></span>
-      </div>
-      <div id="curse-list" class="list"></div>
-    </div>
-    <div class="toolbar sub">
-      <label for="gh-repo" class="lbl">Install from GitHub</label>
-      <input id="gh-repo" type="text" placeholder="owner/repo or a repository URL" spellcheck="false">
+    <div id="gh-offer" class="offer hidden">
+      <span>Install <b id="gh-offer-repo"></b> from GitHub. Any repo that publishes releases works, listed here or not.</span>
       <button id="btn-gh-install" class="btn">Install</button>
-      <span class="hint">Any repo that publishes releases, listed here or not.</span>
     </div>
     <div class="thead cols-browse" aria-hidden="true">
       <span>Addon</span><span>Category</span><span>Downloads</span><span>Source</span><span></span>
     </div>
     <div id="browse-list" class="list"></div>
+    <div id="curse-results" class="hidden">
+      <div class="section-title"><span id="curse-title">More from CurseForge</span></div>
+      <div class="thead cols-curse" aria-hidden="true">
+        <span>Addon</span><span>By</span><span>Downloads</span><span></span>
+      </div>
+      <div id="curse-list" class="list"></div>
+    </div>
     <p class="hint">The catalogue is a public list on GitHub. Add an addon with a pull request and it downloads straight from the author's own releases.</p>
   </section>
 
