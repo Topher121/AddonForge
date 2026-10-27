@@ -1,5 +1,6 @@
 //! AddonForge core: Tauri commands the UI calls over IPC.
 
+mod backup;
 mod catalog;
 mod icons;
 mod install;
@@ -628,6 +629,8 @@ struct Settings {
     svfix: bool,
     /// This build carries the CurseForge API key (search + install from CurseForge).
     has_curse: bool,
+    /// Install everything that has an update right after the launch check.
+    auto_update: bool,
 }
 
 #[tauri::command]
@@ -654,6 +657,7 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         start_tab: std::env::var("ADDONFORGE_TAB").ok().filter(|t| !t.is_empty()),
         svfix: st.install_path.as_deref().map(|p| wow::svfix_present(Path::new(p))).unwrap_or(false),
         has_curse: sources::curseforge::available(),
+        auto_update: st.auto_update,
     })
 }
 
@@ -662,13 +666,107 @@ async fn find_installs(app: State<'_, Shared>) -> Result<Vec<WowInstall>, String
     let found = tokio::task::spawn_blocking(wow::find_installs).await.map_err(err)?;
     let mut st = app.state.lock().await;
     if st.install_path.is_none() {
-        if let Some(f) = found.iter().find(|i| i.flavor == "forever") {
+        if let Some(f) = preferred_forever(&found) {
             st.install_path = Some(f.path.clone());
             st.save().map_err(err)?;
             logi!("auto-selected install {}", f.path);
         }
     }
     Ok(found)
+}
+
+fn folder_name(path: &str) -> String {
+    Path::new(path).file_name().map(|n| n.to_string_lossy().to_ascii_lowercase()).unwrap_or_default()
+}
+
+/// The live `_forever_` client beats the beta folder when both are present
+/// (from 4 Nov 2026 most people will have both for a while).
+fn preferred_forever(found: &[WowInstall]) -> Option<&WowInstall> {
+    let forever = found.iter().filter(|i| i.flavor == "forever");
+    forever.clone().find(|i| folder_name(&i.path) == "_forever_").or_else(|| forever.clone().next())
+}
+
+/// The managed folder is still the beta one and a live `_forever_` client
+/// exists beside it: its path, unless the user already said "not now" for it.
+#[tauri::command]
+async fn live_folder_hint(app: State<'_, Shared>) -> Result<Option<String>, String> {
+    let (current, dismissed) = {
+        let st = app.state.lock().await;
+        (st.install_path.clone(), st.dismissed_live_hint.clone())
+    };
+    let Some(current) = current else { return Ok(None) };
+    if folder_name(&current) != "_classic_beta_" {
+        return Ok(None);
+    }
+    let found = tokio::task::spawn_blocking(wow::find_installs).await.map_err(err)?;
+    Ok(found
+        .iter()
+        .filter(|i| i.flavor == "forever" && folder_name(&i.path) == "_forever_")
+        .map(|i| i.path.clone())
+        .find(|p| dismissed.as_deref() != Some(p.as_str())))
+}
+
+#[tauri::command]
+async fn dismiss_live_hint(app: State<'_, Shared>, path: String) -> Result<(), String> {
+    let mut st = app.state.lock().await;
+    st.dismissed_live_hint = Some(path);
+    st.save().map_err(err)
+}
+
+#[derive(Serialize)]
+struct BackupResult {
+    path: String,
+    files: u64,
+    bytes: u64,
+}
+
+/// Zip `<install>\WTF` into Documents\AddonForge backups. Read-only on WTF.
+#[tauri::command]
+async fn backup_wtf(app: State<'_, Shared>) -> Result<BackupResult, String> {
+    do_backup(&app).await
+}
+
+async fn do_backup(app: &App) -> Result<BackupResult, String> {
+    let install = current_install(app).await?;
+    let src = Path::new(&install).join("WTF");
+    if !src.is_dir() {
+        return Err("No WTF folder in the game folder yet (start WoW once first)".into());
+    }
+    let flavor = folder_name(&install).trim_matches('_').to_string();
+    let stamp = chrono_stamp();
+    let dir = dirs::document_dir().unwrap_or_else(|| AppState::dir()).join("AddonForge backups");
+    let dest = dir.join(format!("WTF-{flavor}-{stamp}.zip"));
+    let d2 = dest.clone();
+    let s = tokio::task::spawn_blocking(move || backup::zip_dir(&src, &d2)).await.map_err(err)?.map_err(err)?;
+    logi!("backed up WTF to {} ({} files)", dest.display(), s.files);
+    Ok(BackupResult { path: dest.to_string_lossy().to_string(), files: s.files, bytes: s.bytes })
+}
+
+/// `YYYYMMDD-HHMM` local-ish (UTC) stamp without pulling in a date crate.
+fn chrono_stamp() -> String {
+    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+    let days = secs / 86400;
+    let (h, m) = ((secs % 86400) / 3600, (secs % 3600) / 60);
+    // Civil-from-days (Howard Hinnant), good for any date we will see.
+    let z = days as i64 + 719468;
+    let era = z.div_euclid(146097);
+    let doe = z.rem_euclid(146097);
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let mo = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if mo <= 2 { y + 1 } else { y };
+    format!("{y:04}{mo:02}{d:02}-{h:02}{m:02}")
+}
+
+#[tauri::command]
+async fn open_backups_folder() -> Result<String, String> {
+    let dir = dirs::document_dir().unwrap_or_else(|| AppState::dir()).join("AddonForge backups");
+    std::fs::create_dir_all(&dir).map_err(err)?;
+    tauri_plugin_opener::open_path(&dir, None::<&str>).map_err(err)?;
+    Ok(dir.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -693,11 +791,15 @@ async fn set_wago_key(app: State<'_, Shared>, key: String) -> Result<bool, Strin
 }
 
 #[tauri::command]
-async fn set_prefs(app: State<'_, Shared>, allow_prerelease: Option<bool>) -> Result<(), String> {
+async fn set_prefs(app: State<'_, Shared>, allow_prerelease: Option<bool>, auto_update: Option<bool>) -> Result<(), String> {
     let mut st = app.state.lock().await;
     if let Some(v) = allow_prerelease {
         st.allow_prerelease = v;
         logi!("allow_prerelease = {v}");
+    }
+    if let Some(v) = auto_update {
+        st.auto_update = v;
+        logi!("auto_update = {v}");
     }
     st.save().map_err(err)
 }
@@ -1573,6 +1675,7 @@ pub fn cli(args: &[String]) -> i32 {
                 let rec = install_from(&app, &key, &src, e.asset_hint.as_deref(), force).await?;
                 Ok(serde_json::to_value(rec).unwrap())
             }
+            "backup" => Ok(serde_json::to_value(do_backup(&app).await?).unwrap()),
             "search" => {
                 let q = args[1..].join(" ");
                 let mods = sources::curseforge::search(&app.client, &q, 15).await.map_err(|e| e.to_string())?;
@@ -1686,6 +1789,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_settings,
             find_installs,
+            live_folder_hint,
+            dismiss_live_hint,
+            backup_wtf,
+            open_backups_folder,
             set_install_path,
             set_wago_key,
             set_prefs,
@@ -1725,6 +1832,24 @@ pub fn finish_replace(old: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn live_folder_beats_beta_folder() {
+        let mk = |p: &str| WowInstall { path: p.into(), product: "x".into(), flavor: "forever".into(), label: "WoW: Forever".into() };
+        let both = vec![mk(r"C:\\WoW\\_classic_beta_"), mk(r"C:\\WoW\\_forever_")];
+        assert_eq!(preferred_forever(&both).unwrap().path, r"C:\\WoW\\_forever_");
+        let beta_only = vec![mk(r"C:\\WoW\\_classic_beta_")];
+        assert_eq!(preferred_forever(&beta_only).unwrap().path, r"C:\\WoW\\_classic_beta_");
+        assert!(preferred_forever(&[]).is_none());
+    }
+
+    #[test]
+    fn stamp_is_sortable_and_sane() {
+        let s = chrono_stamp();
+        assert_eq!(s.len(), 13, "{s}");
+        assert!(s.starts_with("20"), "{s}");
+        assert_eq!(&s[8..9], "-");
+    }
+
     #[test]
     fn chosen_source_respects_what_the_entry_offers() {
         let mut e = CatalogEntry::default();
