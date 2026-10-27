@@ -194,7 +194,7 @@ fn first_readme_image(md: &str, repo: &str) -> Option<String> {
     for (_, mut url) in candidates {
         let l = url.to_ascii_lowercase();
         // badges are the usual first image; skip the obvious ones
-        if l.contains("shields.io") || l.contains("badge") || l.ends_with(".svg") {
+        if l.contains("shields.io") || l.contains("badge") || l.ends_with(".svg") || money_or_button(&l) {
             continue;
         }
         if !l.starts_with("http") {
@@ -238,6 +238,11 @@ fn attr(tag: &str, name: &str) -> Option<String> {
 /// First real picture in GitHub's rendered README (images come back
 /// through camo.githubusercontent.com, so nothing off-GitHub is fetched).
 /// Badges, logos and widgets are skipped.
+/// Donate buttons and the like are images too; a screenshot they are not.
+fn money_or_button(l: &str) -> bool {
+    ["donate", "paypal", "patreon", "ko-fi", "kofi", "buymeacoffee", "sponsor", "button", "btn_", "btn-"].iter().any(|w| l.contains(w))
+}
+
 fn first_html_image(html: &str) -> Option<String> {
     let lower = html.to_ascii_lowercase();
     let mut i = 0;
@@ -250,7 +255,7 @@ fn first_html_image(html: &str) -> Option<String> {
         let canonical = attr(tag, "data-canonical-src").unwrap_or_default().to_ascii_lowercase();
         let alt = attr(tag, "alt").unwrap_or_default().to_ascii_lowercase();
         let probe = format!("{} {}", src.to_ascii_lowercase(), canonical);
-        if probe.contains("shields.io") || probe.contains("badge") || probe.contains(".svg") || probe.contains("discordapp.com/api") || probe.contains("widget") || alt.contains("logo") || alt.contains("badge") || alt.contains("discord") {
+        if probe.contains("shields.io") || probe.contains("badge") || probe.contains(".svg") || probe.contains("discordapp.com/api") || probe.contains("widget") || alt.contains("logo") || alt.contains("badge") || alt.contains("discord") || money_or_button(&probe) || money_or_button(&alt) {
             continue;
         }
         if allowed_image_host(&src) {
@@ -351,7 +356,8 @@ async fn latest_release_notes(client: &reqwest::Client, repo: &str) -> Result<Op
     }
     let v = r.json::<serde_json::Value>().await.map_err(|_| ())?;
     let body = v.get("body").and_then(|b| b.as_str()).map(release_notes).filter(|s| !s.is_empty());
-    let tag = v.get("tag_name").and_then(|t| t.as_str()).map(|t| t.trim_start_matches('v').to_string()).unwrap_or_default();
+    // "bundle/v12.3.1+v1.0.9" -> "12.3.1+v1.0.9": drop any path prefix and a leading v.
+    let tag = v.get("tag_name").and_then(|t| t.as_str()).map(|t| t.rsplit('/').next().unwrap_or(t).trim_start_matches('v').to_string()).unwrap_or_default();
     Ok(body.map(|b| (b, tag)))
 }
 
@@ -557,6 +563,13 @@ mod tests {
         let md2 = "<img src=\"https://user-images.githubusercontent.com/1/a.png\" width=400>";
         assert_eq!(first_readme_image(md2, "o/r").as_deref(), Some("https://user-images.githubusercontent.com/1/a.png"));
         assert_eq!(first_readme_image("![x](https://evil.example/a.png)", "o/r"), None);
+    }
+
+    #[test]
+    fn donate_buttons_are_not_screenshots() {
+        let html = r#"<a href="x"><img src="https://camo.githubusercontent.com/aaa" data-canonical-src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_LG.gif" alt="Donate"></a><img src="https://user-images.githubusercontent.com/1/shot.png" alt="in game">"#;
+        assert_eq!(first_html_image(html).as_deref(), Some("https://user-images.githubusercontent.com/1/shot.png"));
+        assert!(first_html_image(r#"<img src="https://camo.githubusercontent.com/bbb" data-canonical-src="https://ko-fi.com/img/button.png">"#).is_none());
     }
 
     #[test]
