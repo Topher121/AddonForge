@@ -104,6 +104,11 @@ fn pick_source(
         if let Some(r) = &e.github {
             return Some(Source::Github(r.clone()));
         }
+        if sources::curseforge::available() && !e.curse_locked {
+            if let Some(c) = e.curse {
+                return Some(Source::Curse(c));
+            }
+        }
         if has_wago {
             if let Some(w) = &e.wago {
                 return Some(Source::Wago(w.clone()));
@@ -120,11 +125,21 @@ fn pick_source(
             return Some(Source::Wago(w.clone()));
         }
     }
-    if let Some(w) = &f.wago {
-        return Some(Source::Wago(w.clone()));
+    if has_wago {
+        if let Some(w) = &f.wago {
+            return Some(Source::Wago(w.clone()));
+        }
+    }
+    if sources::curseforge::available() {
+        if let Some(c) = f.curse {
+            return Some(Source::Curse(c));
+        }
     }
     if let Some(i) = f.wowi {
         return Some(Source::Wowi(i));
+    }
+    if let Some(w) = &f.wago {
+        return Some(Source::Wago(w.clone()));
     }
     if let Some(site) = &f.website {
         if let Some(repo) = sources::parse_github_repo(site) {
@@ -447,6 +462,7 @@ fn entry_for_source<'a>(cat: &'a Catalog, key: &str, src: &Source) -> Option<&'a
             Source::Wago(id) => e.wago.as_ref() == Some(id),
             Source::Wowi(id) => e.wowi == Some(*id),
             Source::Tukui(id) => e.tukui.as_ref() == Some(id),
+            Source::Curse(id) => e.curse == Some(*id),
         }))
 }
 
@@ -537,14 +553,35 @@ async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
     match sources::resolve(&app.client, &src, opts).await {
         Ok(r) => apply_remote(pkg, r, vouched),
         Err(e) => {
+            let msg = e.to_string();
+            if let Some(rest) = msg.strip_prefix(sources::curseforge::OPT_OUT) {
+                // Not an error: the author only publishes through CurseForge's own app.
+                pkg.status = "curse-only".into();
+                pkg.note = format!("CurseForge{rest}; the link still works");
+                return;
+            }
             loge!("check {}: {e}", pkg.key);
             pkg.status = "error".into();
-            pkg.note = e.to_string();
+            pkg.note = msg;
         }
     }
 }
 
 async fn check_all(app: Shared, pkgs: &mut [Package], cat: &Catalog) {
+    let curse_ids: Vec<u64> = pkgs
+        .iter()
+        .filter(|p| !p.ignored)
+        .filter_map(|p| match &p.source {
+            Some(Source::Curse(id)) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    if !curse_ids.is_empty() {
+        match sources::curseforge::prefetch(&app.client, &curse_ids).await {
+            Ok(n) => logi!("curseforge: prefetched {n} of {} addons in one request", curse_ids.len()),
+            Err(e) => loge!("curseforge prefetch: {e}"),
+        }
+    }
     let sem = Arc::new(Semaphore::new(6));
     let mut set = tokio::task::JoinSet::new();
     for (i, p) in pkgs.iter().enumerate() {
@@ -589,6 +626,8 @@ struct Settings {
     start_tab: Option<String>,
     /// ForeverSVFix is set up on this install (see `wow::svfix_present`).
     svfix: bool,
+    /// This build carries the CurseForge API key (search + install from CurseForge).
+    has_curse: bool,
 }
 
 #[tauri::command]
@@ -614,6 +653,7 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         support_email: SUPPORT_EMAIL.into(),
         start_tab: std::env::var("ADDONFORGE_TAB").ok().filter(|t| !t.is_empty()),
         svfix: st.install_path.as_deref().map(|p| wow::svfix_present(Path::new(p))).unwrap_or(false),
+        has_curse: sources::curseforge::available(),
     })
 }
 
@@ -895,7 +935,10 @@ async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
                 .iter()
                 .filter_map(|id| cat.addons.iter().find(|e| &e.id == id))
                 .map(|e| {
-                    let direct = e.github.is_some() || e.wowi.is_some() || e.tukui.is_some();
+                    let direct = e.github.is_some()
+                        || e.wowi.is_some()
+                        || e.tukui.is_some()
+                        || (e.curse.is_some() && !e.curse_locked && sources::curseforge::available());
                     BundleAddon {
                         id: e.id.clone(),
                         name: e.name.clone(),
@@ -971,6 +1014,79 @@ async fn addon_details(app: State<'_, Shared>, id: String) -> Result<icons::Deta
         Some(repo) => Ok(icons::github_details(&app.client, repo).await),
         None => Ok(icons::Details::default()),
     }
+}
+
+/// One CurseForge search result, trimmed to what the Find addons list shows.
+#[derive(Serialize, Clone)]
+struct CurseRow {
+    id: u64,
+    name: String,
+    summary: String,
+    authors: String,
+    downloads: u64,
+    url: String,
+    /// False when the author only distributes through CurseForge's own app.
+    installable: bool,
+    /// Catalogue id when this project is already listed (so its row is preferred).
+    catalog_id: Option<String>,
+    installed: bool,
+}
+
+/// Search CurseForge's Forever addons. Results live in memory only.
+#[tauri::command]
+async fn curse_search(app: State<'_, Shared>, query: String) -> Result<Vec<CurseRow>, String> {
+    if !sources::curseforge::available() {
+        return Err("CurseForge isn't available in this build".into());
+    }
+    let mods = sources::curseforge::search(&app.client, &query, 25).await.map_err(err)?;
+    let cat = catalog_cached(&app).await;
+    let st = app.state.lock().await.clone();
+    let have: Vec<Package> = scan_packages(&app).await.unwrap_or_default();
+    Ok(mods
+        .into_iter()
+        .map(|m| {
+            let entry = cat.addons.iter().find(|e| e.curse == Some(m.id));
+            let installable = matches!(
+                sources::curseforge::pick_file(&m, st.allow_prerelease),
+                sources::curseforge::Pick::Ready(_) | sources::curseforge::Pick::NeedsFile(_)
+            );
+            let installed = have.iter().any(|p| {
+                p.curse_id == Some(m.id)
+                    || matches!(&p.source, Some(Source::Curse(c)) if *c == m.id)
+                    || entry.map(|e| p.catalog_id.as_deref() == Some(e.id.as_str())).unwrap_or(false)
+            });
+            CurseRow {
+                id: m.id,
+                name: m.name.clone(),
+                summary: m.summary.clone(),
+                authors: m.authors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "),
+                downloads: m.download_count,
+                url: if m.links.website_url.is_empty() { sources::curseforge::project_url(m.id) } else { m.links.website_url.clone() },
+                installable,
+                catalog_id: entry.map(|e| e.id.clone()),
+                installed,
+            }
+        })
+        .collect())
+}
+
+/// Install a CurseForge project by id (from search). Catalogue entries that
+/// carry the same id keep their catalogue identity.
+#[tauri::command]
+async fn install_curse(
+    app: State<'_, Shared>,
+    id: u64,
+    allow_non_forever: Option<bool>,
+) -> Result<Package, String> {
+    if !sources::curseforge::available() {
+        return Err("CurseForge isn't available in this build".into());
+    }
+    let cat = catalog_cached(&app).await;
+    let st = app.state.lock().await.clone();
+    let src = Source::Curse(id);
+    let key = key_for_source(&cat, &st, &src, None);
+    install_from(&app, &key, &src, None, allow_non_forever.unwrap_or(false)).await?;
+    refreshed(&app, &key).await
 }
 
 #[tauri::command]
@@ -1271,8 +1387,9 @@ async fn diagnostics(app: State<'_, Shared>) -> Result<String, String> {
         None => s.push_str("Install: none selected\n"),
     }
     s.push_str(&format!(
-        "Wago key: {} | pre-releases: {} | pinned: {} | ignored: {}\n",
+        "Wago key: {} | CurseForge: {} | pre-releases: {} | pinned: {} | ignored: {}\n",
         if st.has_wago_key() { "yes" } else { "no" },
+        if sources::curseforge::available() { "yes" } else { "no" },
         st.allow_prerelease,
         st.pinned.len(),
         st.ignored.len()
@@ -1428,6 +1545,26 @@ pub fn cli(args: &[String]) -> i32 {
                 let rec = install_from(&app, &key, &src, e.asset_hint.as_deref(), force).await?;
                 Ok(serde_json::to_value(rec).unwrap())
             }
+            "search" => {
+                let q = args[1..].join(" ");
+                let mods = sources::curseforge::search(&app.client, &q, 15).await.map_err(|e| e.to_string())?;
+                let st = app.state.lock().await.clone();
+                Ok(serde_json::Value::Array(mods.iter().map(|m| serde_json::json!({
+                    "id": m.id, "name": m.name, "downloads": m.download_count,
+                    "distribution": m.allow_mod_distribution,
+                    "pick": format!("{:?}", sources::curseforge::pick_file(m, st.allow_prerelease)),
+                })).collect()))
+            }
+            "curse" => {
+                let id: u64 = args.get(1).and_then(|s| s.parse().ok()).ok_or("usage: curse <project id> [--force]")?;
+                let force = args.iter().any(|a| a == "--force");
+                let src = Source::Curse(id);
+                let cat = catalog_cached(&app).await;
+                let st = app.state.lock().await.clone();
+                let key = key_for_source(&cat, &st, &src, None);
+                let rec = install_from(&app, &key, &src, None, force).await?;
+                Ok(serde_json::to_value(rec).unwrap())
+            }
             "github" => {
                 let repo = args.get(1).and_then(|r| sources::parse_github_repo(r)).ok_or("usage: github <owner/repo>")?;
                 let force = args.iter().any(|a| a == "--force");
@@ -1532,6 +1669,8 @@ pub fn run() {
             catalog_list,
             bundles,
             catalog_featured,
+            curse_search,
+            install_curse,
             package_icons,
             catalog_icons,
             addon_details,

@@ -1,7 +1,7 @@
 {
   "flavor": "forever",
-  "updated": "2026-10-27",
-  "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, feeds \"New in the catalogue\"). Top-level: bundles (starter packs) and featured (free author spotlights: id, from, to, blurb; see CONTRIBUTING.md).",
+  "updated": "2026-10-28",
+  "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, feeds \"New in the catalogue\"). Top-level: bundles (starter packs) and featured (free author spotlights: id, from, to, blurb; see CONTRIBUTING.md). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
       "id": "bigwigs",
@@ -1202,31 +1202,35 @@
     {
       "id": "leatrix-plus",
       "name": "Leatrix Plus",
-      "desc": "Popular quality-of-life bundle. CurseForge only.",
+      "desc": "Popular quality-of-life bundle.",
       "category": "UI",
       "curse": 94855,
       "folders": [
         "Leatrix_Plus"
       ],
       "url": "https://www.curseforge.com/wow/addons/leatrix-plus",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "leatrix-maps",
       "name": "Leatrix Maps",
-      "desc": "Map improvements. CurseForge only.",
+      "desc": "Map improvements.",
       "category": "World",
       "curse": 298842,
       "folders": [
         "Leatrix_Maps"
       ],
       "url": "https://www.curseforge.com/wow/addons/leatrix-maps",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "baganator",
       "name": "Baganator",
-      "desc": "Bag addon. CurseForge only (needs Syndicator). Try BetterBags instead.",
+      "desc": "Bag addon. (needs Syndicator). Try BetterBags instead.",
       "category": "Bags",
       "curse": 914482,
       "folders": [
@@ -1234,31 +1238,37 @@
         "Syndicator"
       ],
       "url": "https://www.curseforge.com/wow/addons/baganator",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "auctionator",
       "name": "Auctionator",
-      "desc": "Auction house helper. CurseForge only.",
+      "desc": "Auction house helper.",
       "category": "Auction house",
       "curse": 6124,
       "folders": [
         "Auctionator"
       ],
       "url": "https://www.curseforge.com/wow/addons/auctionator",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "platynator",
       "name": "Platynator",
-      "desc": "Nameplates from the Baganator author. CurseForge only.",
+      "desc": "Nameplates from the Baganator author.",
       "category": "Nameplates",
       "curse": 1361299,
       "folders": [
         "Platynator"
       ],
       "url": "https://www.curseforge.com/wow/addons/platynator",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "bagnon",
@@ -1271,7 +1281,9 @@
         "BagBrother"
       ],
       "url": "https://www.curseforge.com/wow/addons/bagnon",
-      "forever": true
+      "forever": true,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "whats-training",
@@ -1325,7 +1337,9 @@
         "Details"
       ],
       "url": "https://github.com/Tercioo/Details-Damage-Meter",
-      "forever": false
+      "forever": false,
+      "curse_locked": true,
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
     {
       "id": "buggrabber",

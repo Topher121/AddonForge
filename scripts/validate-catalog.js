@@ -24,7 +24,7 @@ const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "group_required_dependencies", "url", "forever", "icon", "notice", "added"]);
+const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "group_required_dependencies", "curse_locked", "url", "forever", "icon", "notice", "added"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
   const where = `addons[${i}]${a && a.id ? ` (${a.id})` : ""}`;
@@ -49,6 +49,7 @@ for (const [i, a] of (cat.addons || []).entries()) {
   if (a.notice !== undefined && (typeof a.notice !== "string" || a.notice.length > 160)) problems.push(`${where}: "notice" must be a short string (160 chars max)`);
   if (a.added !== undefined && !dateRe.test(a.added)) problems.push(`${where}: "added" must be YYYY-MM-DD`);
   if (a.forever !== undefined && a.forever !== null && typeof a.forever !== "boolean") problems.push(`${where}: "forever" must be true, false or null`);
+  if (a.curse_locked !== undefined && (typeof a.curse_locked !== "boolean" || a.curse === undefined)) problems.push(`${where}: "curse_locked" must be a boolean on an entry with a curse id`);
   if (a.group_required_dependencies !== undefined && typeof a.group_required_dependencies !== "boolean") problems.push(`${where}: "group_required_dependencies" must be true or false`);
   if (!Array.isArray(a.folders) || a.folders.length === 0 || !a.folders.every((f) => typeof f === "string" && f.trim() && !/[\\/]/.test(f))) {
     problems.push(`${where}: "folders" must list at least one AddOns folder name (no slashes)`);

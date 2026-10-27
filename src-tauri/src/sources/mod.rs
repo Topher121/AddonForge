@@ -2,6 +2,7 @@
 //! the zip" for one addon. The app talks to these sites directly over
 //! HTTPS; nothing goes through a Pocket Forge server.
 
+pub mod curseforge;
 pub mod github;
 pub mod tukui;
 pub mod wago;
@@ -16,6 +17,8 @@ pub enum Source {
     Wago(String),
     Wowi(u64),
     Tukui(String),
+    /// CurseForge project id (only usable in builds that carry the API key).
+    Curse(u64),
 }
 
 impl Source {
@@ -25,6 +28,7 @@ impl Source {
             Source::Wago(_) => "wago",
             Source::Wowi(_) => "wowi",
             Source::Tukui(_) => "tukui",
+            Source::Curse(_) => "curse",
         }
     }
     pub fn id(&self) -> String {
@@ -33,6 +37,7 @@ impl Source {
             Source::Wago(i) => i.clone(),
             Source::Wowi(i) => i.to_string(),
             Source::Tukui(s) => s.clone(),
+            Source::Curse(i) => i.to_string(),
         }
     }
     pub fn label(&self) -> String {
@@ -41,6 +46,7 @@ impl Source {
             Source::Wago(_) => "Wago".into(),
             Source::Wowi(_) => "WoWInterface".into(),
             Source::Tukui(_) => "TukUI".into(),
+            Source::Curse(_) => "CurseForge".into(),
         }
     }
     pub fn url(&self) -> String {
@@ -49,6 +55,7 @@ impl Source {
             Source::Wago(i) => format!("https://addons.wago.io/addons/{i}"),
             Source::Wowi(i) => format!("https://www.wowinterface.com/downloads/info{i}"),
             Source::Tukui(s) => format!("https://tukui.org/{s}"),
+            Source::Curse(i) => curseforge::project_url(*i),
         }
     }
     /// Rebuild from the strings stored in state.json.
@@ -58,13 +65,14 @@ impl Source {
             "wago" => Some(Source::Wago(id.to_string())),
             "wowi" => id.parse().ok().map(Source::Wowi),
             "tukui" => Some(Source::Tukui(id.to_string())),
+            "curse" => id.parse().ok().map(Source::Curse),
             _ => None,
         }
     }
 }
 
 /// The latest release as the source reports it.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Remote {
     pub version: String,
     pub download_url: String,
@@ -94,6 +102,7 @@ pub async fn resolve(
         Source::Wago(id) => wago::resolve(client, id, opts.wago_key, opts.prerelease).await,
         Source::Wowi(id) => wowi::resolve(client, *id).await,
         Source::Tukui(slug) => tukui::resolve(client, slug).await,
+        Source::Curse(id) => curseforge::resolve(client, *id, opts.prerelease).await,
     }
 }
 

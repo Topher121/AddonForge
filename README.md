@@ -12,8 +12,8 @@ Either one updates itself when a new build is out. Windows may show "Windows pro
 ![AddonForge showing installed addons with update status](docs/screenshot.png)
 
 - **Light.** A single exe on top of the WebView2 that Windows already has. No bundled browser.
-- **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI), the same way your browser would.
-- **Honest.** If an addon only publishes on CurseForge, AddonForge says so and gives you the link instead of pretending.
+- **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI, CurseForge), the same way your browser would.
+- **Honest.** If an addon's author only allows downloads through CurseForge's own app, AddonForge says so and gives you the link instead of pretending.
 
 ## How it finds addons
 
@@ -29,7 +29,7 @@ On top of that there is a **catalogue**: [`catalog/forever.json`](catalog/foreve
 - Sort the catalogue by name, most downloaded or recently updated. Download totals come from a daily GitHub Action that sums each author's release downloads into [`catalog/stats.json`](catalog/stats.json).
 - Finds your WoW: Forever install and lists every addon in it, grouped properly (BigWigs and its twelve zone folders are one row).
 - Checks for updates in parallel, straight from where each author publishes.
-- Installs from the catalogue, or from **any GitHub repo** you paste in.
+- Installs from the catalogue, from **any GitHub repo** you paste in, or from a **CurseForge search** covering every Forever addon they list.
 - Tells you when an addon is missing a required dependency, with a one-click install if the catalogue knows it.
 - Pin an addon to hold it at its current version. Ignore one to hide it.
 - Optional pre-release toggle for authors who only ship Forever builds as betas.
@@ -51,7 +51,7 @@ Honest version: AddonForge is designed, tested and decided by one person with a 
 | Wago Addons | Your own key, Patreon only | Wago gives updater keys to its Patreon supporters only (from about $3 a month); keys from its developer page do not work for updates. Paste it in Settings. Stored locally, only sent to addons.wago.io. Without one, Wago-only addons are link-only. |
 | WoWInterface | No | Public JSON API. |
 | TukUI | No | ElvUI / Tukui. |
-| CurseForge | Link only | Their API terms don't allow a key to ship inside an app. |
+| CurseForge | Built in | Search all Forever addons on CurseForge and install the ones whose authors allow third-party downloads (about seven in ten of the popular ones). The API key ships inside release builds, is only ever sent to api.curseforge.com, and nothing from CurseForge is written to disk. Opted-out addons are link only. |
 
 ## Build
 
