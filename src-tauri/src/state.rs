@@ -46,6 +46,14 @@ pub struct AppState {
     /// Build number of the last version that ran, for the one-time "what's new" note.
     #[serde(default)]
     pub last_seen_build: u32,
+    /// Install every available update as soon as the launch check finishes
+    /// (pinned and ignored addons are left alone).
+    #[serde(default)]
+    pub auto_update: bool,
+    /// A live `_forever_` folder the user chose not to switch to from the beta
+    /// folder, so the hint is not shown again for that path.
+    #[serde(default)]
+    pub dismissed_live_hint: Option<String>,
 }
 
 pub fn now_secs() -> u64 {

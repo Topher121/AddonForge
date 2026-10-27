@@ -314,12 +314,122 @@ fn readme_excerpt(md: &str) -> String {
 pub struct Details {
     pub summary: Option<String>,
     pub image: Option<String>,
+    /// Plain-text notes of the latest GitHub release, and its tag.
+    pub changelog: Option<String>,
+    pub changelog_version: Option<String>,
 }
 
 #[derive(serde::Serialize, serde::Deserialize)]
 struct CachedDetails {
     summary: Option<String>,
     image_url: Option<String>,
+    #[serde(default)]
+    changelog: Option<String>,
+    #[serde(default)]
+    changelog_version: Option<String>,
+    /// False when the release-notes call failed (rate limit, offline): try
+    /// again next time instead of remembering "no notes" for a day.
+    #[serde(default)]
+    changelog_checked: bool,
+}
+
+/// Latest release notes for a repo: (plain text, version). `Err` when the
+/// API call itself failed, `Ok(None)` when the release has no notes.
+async fn latest_release_notes(client: &reqwest::Client, repo: &str) -> Result<Option<(String, String)>, ()> {
+    let r = client
+        .get(format!("https://api.github.com/repos/{repo}/releases/latest"))
+        .header("Accept", "application/vnd.github+json")
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|_| ())?;
+    if r.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None); // no releases at all
+    }
+    if !r.status().is_success() {
+        return Err(());
+    }
+    let v = r.json::<serde_json::Value>().await.map_err(|_| ())?;
+    let body = v.get("body").and_then(|b| b.as_str()).map(release_notes).filter(|s| !s.is_empty());
+    let tag = v.get("tag_name").and_then(|t| t.as_str()).map(|t| t.trim_start_matches('v').to_string()).unwrap_or_default();
+    Ok(body.map(|b| (b, tag)))
+}
+
+/// Release notes as plain text: markdown markers dropped, line breaks kept,
+/// capped so a novel of a changelog does not swallow the window.
+pub fn release_notes(md: &str) -> String {
+    let mut out = String::new();
+    let mut in_code = false;
+    for raw in md.lines() {
+        let line = raw.trim_end();
+        if line.trim_start().starts_with("```") {
+            in_code = !in_code;
+            continue;
+        }
+        if in_code {
+            continue;
+        }
+        let mut t = line.trim_start().to_string();
+        if t.starts_with('<') && t.ends_with('>') {
+            continue;
+        }
+        while t.starts_with('#') {
+            t.remove(0);
+        }
+        let t = t.trim_start();
+        let t = t.strip_prefix("- ").or_else(|| t.strip_prefix("* ")).map(|r| format!("\u{2022} {r}")).unwrap_or_else(|| t.to_string());
+        let t = strip_inline(&t);
+        if t.trim().is_empty() {
+            if !out.is_empty() && !out.ends_with("\n\n") {
+                out.push('\n');
+            }
+            continue;
+        }
+        out.push_str(t.trim_end());
+        out.push('\n');
+        if out.len() > 1200 {
+            out.truncate(1200);
+            out.push_str("\u{2026}");
+            break;
+        }
+    }
+    out.trim().to_string()
+}
+
+/// `[text](url)` -> text, `**x**`/`__x__`/backticks stripped, bare html tags removed.
+fn strip_inline(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    let mut in_tag = false;
+    while let Some(c) = chars.next() {
+        match c {
+            '<' => in_tag = true,
+            '>' if in_tag => in_tag = false,
+            _ if in_tag => {}
+            '[' => {
+                let mut text = String::new();
+                let mut closed = false;
+                for d in chars.by_ref() {
+                    if d == ']' {
+                        closed = true;
+                        break;
+                    }
+                    text.push(d);
+                }
+                if closed && chars.peek() == Some(&'(') {
+                    for d in chars.by_ref() {
+                        if d == ')' {
+                            break;
+                        }
+                    }
+                }
+                out.push_str(&text);
+            }
+            '*' | '_' | '`' => {}
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 /// README summary and one preview image for a GitHub repo. Cached a day.
@@ -328,8 +438,17 @@ pub async fn github_details(client: &reqwest::Client, repo: &str) -> Details {
     if let Ok(meta) = fs::metadata(&cache) {
         let fresh = meta.modified().ok().and_then(|m| m.elapsed().ok()).map(|age| age < README_TTL).unwrap_or(false);
         if fresh {
-            if let Some(d) = fs::read(&cache).ok().and_then(|b| serde_json::from_slice::<CachedDetails>(&b).ok()) {
-                return Details { summary: d.summary, image: d.image_url.as_deref().and_then(preview_cached) };
+            if let Some(mut d) = fs::read(&cache).ok().and_then(|b| serde_json::from_slice::<CachedDetails>(&b).ok()) {
+                if !d.changelog_checked {
+                    // Earlier attempt failed (or predates this field): retry just the notes.
+                    if let Ok(notes) = latest_release_notes(client, repo).await {
+                        d.changelog_checked = true;
+                        d.changelog = notes.as_ref().map(|n| n.0.clone());
+                        d.changelog_version = notes.map(|n| n.1).filter(|t| !t.is_empty());
+                        let _ = fs::write(&cache, serde_json::to_vec(&d).unwrap_or_default());
+                    }
+                }
+                return Details { summary: d.summary, image: d.image_url.as_deref().and_then(preview_cached), changelog: d.changelog, changelog_version: d.changelog_version };
             }
         }
     }
@@ -345,7 +464,16 @@ pub async fn github_details(client: &reqwest::Client, repo: &str) -> Details {
             }
         }
     }
-    let Some(md) = md else { return Details::default() };
+    // Latest release notes: one API call, cached with the rest for a day.
+    let notes = latest_release_notes(client, repo).await;
+    let changelog_checked = notes.is_ok();
+    let (changelog, changelog_version) = match notes {
+        Ok(Some((b, t))) => (Some(b), Some(t).filter(|t| !t.is_empty())),
+        _ => (None, None),
+    };
+    let Some(md) = md else {
+        return Details { changelog, changelog_version, ..Details::default() };
+    };
     let summary = Some(readme_excerpt(&md)).filter(|s| !s.is_empty());
     // Picture: GitHub's rendered README first (its proxy serves the
     // author's off-site images from a GitHub host), raw markdown as fallback.
@@ -371,9 +499,9 @@ pub async fn github_details(client: &reqwest::Client, repo: &str) -> Details {
         None => None,
     };
     let _ = fs::create_dir_all(cache_dir());
-    let cached = CachedDetails { summary: summary.clone(), image_url: image_url.filter(|_| image.is_some()) };
+    let cached = CachedDetails { summary: summary.clone(), image_url: image_url.filter(|_| image.is_some()), changelog: changelog.clone(), changelog_version: changelog_version.clone(), changelog_checked };
     let _ = fs::write(&cache, serde_json::to_vec(&cached).unwrap_or_default());
-    Details { summary, image }
+    Details { summary, image, changelog, changelog_version }
 }
 
 fn preview_path(url: &str) -> PathBuf {
@@ -411,6 +539,16 @@ pub async fn preview_image(client: &reqwest::Client, url: &str) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn release_notes_are_plain_and_short() {
+        let md = "## 1.2.0\n- **Fixed** the [map](https://x.y) bug\n* Added `thing`\n```lua\ncode\n```\n<img src=x>\nPlain line";
+        let out = release_notes(md);
+        assert_eq!(out, "1.2.0\n\u{2022} Fixed the map bug\n\u{2022} Added thing\nPlain line");
+        let long = (0..200).map(|i| format!("- line {i} is here")).collect::<Vec<_>>().join("\n");
+        assert!(release_notes(&long).len() <= 1210);
+        assert!(release_notes(&long).ends_with('\u{2026}'));
+    }
 
     #[test]
     fn readme_image_skips_badges_and_resolves_relative() {

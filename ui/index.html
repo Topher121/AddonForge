@@ -28,6 +28,12 @@
   <button id="selfupdate-go" class="btn primary small">Update now</button>
   <button id="selfupdate-skip" class="btn small">Skip this one</button>
 </div>
+<div id="livehint" class="banner hidden">
+  <span id="livehint-text"></span>
+  <span class="grow"></span>
+  <button id="livehint-go" class="btn primary small">Switch to it</button>
+  <button id="livehint-skip" class="btn small">Not now</button>
+</div>
 
 <main>
   <section id="tab-installed" class="panel active">
@@ -120,6 +126,8 @@
     <div class="pref">
       <div class="pref-label">Updates</div>
       <div class="pref-body">
+        <label class="chk big"><input type="checkbox" id="pref-autoupdate"> Update everything when AddonForge opens</label>
+        <p class="hint">Installs whatever has an update as soon as the launch check finishes. Pinned and ignored addons are left alone.</p>
         <label class="chk big"><input type="checkbox" id="pref-prerelease"> Include pre-releases and beta builds</label>
         <p class="hint">For authors who only ship their Forever build as a GitHub pre-release or a Wago beta. Uses the GitHub API for the check, limited to 60 requests an hour without a token.</p>
         <button id="btn-selfcheck" class="link">Check for an AddonForge update now</button>
@@ -147,6 +155,17 @@
         </div>
         <p class="hint">Names and sources only, no settings. Import one to install everything on it.</p>
         <div id="import-plan" class="hidden"></div>
+      </div>
+    </div>
+
+    <div class="pref">
+      <div class="pref-label">Backups</div>
+      <div class="pref-body">
+        <div class="row">
+          <button id="btn-backup-wtf" class="btn">Back up the WTF folder</button>
+          <button id="btn-open-backups" class="link">Open the backups folder</button>
+        </div>
+        <p class="hint">Zips your game's <code>WTF</code> folder (addon settings, saved variables, key bindings) into <code>Documents\AddonForge backups</code>. AddonForge only reads it. To restore, close WoW and unzip over the WTF folder yourself.</p>
       </div>
     </div>
 

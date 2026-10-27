@@ -413,9 +413,40 @@ async function checkUpdates() {
 
 async function updateAll() {
   const todo = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored);
+  if (!todo.length) return;
   for (const p of todo) await updateOne(p);
   toast(`Updated ${todo.length} addon${todo.length === 1 ? "" : "s"}`);
 }
+
+// The beta folder is still the managed one and the live client has appeared beside it.
+let liveHintPath = null;
+async function liveHint() {
+  try {
+    liveHintPath = await invoke("live_folder_hint");
+  } catch (_) {
+    liveHintPath = null;
+  }
+  if (!liveHintPath) return $("livehint").classList.add("hidden");
+  $("livehint-text").innerHTML = `WoW: Forever's live game folder was found at <code>${esc(liveHintPath)}</code>. AddonForge is still managing the beta folder.`;
+  $("livehint").classList.remove("hidden");
+}
+$("livehint-go").onclick = async () => {
+  if (!liveHintPath) return;
+  try {
+    const info = await invoke("set_install_path", { path: liveHintPath });
+    $("livehint").classList.add("hidden");
+    toast(`Managing ${info.label} at ${liveHintPath}. Your addons from the beta folder are not copied; install them again here.`);
+    await loadSettings();
+    await rescan();
+    checkUpdates();
+  } catch (err) {
+    toast(String(err), true);
+  }
+};
+$("livehint-skip").onclick = async () => {
+  $("livehint").classList.add("hidden");
+  try { await invoke("dismiss_live_hint", { path: liveHintPath }); } catch (_) {}
+};
 
 $("btn-check").onclick = checkUpdates;
 $("btn-rescan").onclick = () => rescan();
@@ -553,8 +584,9 @@ async function openDetail(id, installedPackage = null) {
   if (seq !== detailSeq || !detailId) return;
   const parts = [localInfo];
   if (d?.image) parts.push(`<img class="shot" src="${d.image}" alt="Screenshot from the addon's README">`);
+  if (d?.changelog) parts.push(`<div class="notes first"><div class="notes-title">What's new${d.changelog_version ? " in " + esc(d.changelog_version) : ""}</div><pre>${esc(d.changelog)}</pre></div>`);
   if (d?.summary) parts.push(`<div class="readme">${esc(d.summary)}</div>`);
-  if (!d?.image && !d?.summary) parts.push('<div class="muted">No README to show. Its page has the details.</div>');
+  if (!d?.image && !d?.summary && !d?.changelog) parts.push('<div class="muted">No README to show. Its page has the details.</div>');
   $("detail-body").innerHTML = parts.join("");
 }
 function closeDetail() {
@@ -822,6 +854,7 @@ async function loadSettings() {
   $("wago-link").dataset.url = settings.wago_key_url;
   $("wago-status").textContent = settings.has_wago_key ? "A key is saved." : "No key saved. Wago-only addons show as \"Needs Wago key\" and stay link-only.";
   $("pref-prerelease").checked = !!settings.allow_prerelease;
+  $("pref-autoupdate").checked = !!settings.auto_update;
   $("catalog-info").textContent = settings.catalog_count
     ? `${settings.catalog_count} addons · ${settings.catalog_source === "remote" ? "latest from GitHub" : "built-in copy (GitHub copy unreachable)"}${settings.catalog_updated ? " · " + settings.catalog_updated : ""}`
     : "not loaded yet";
@@ -904,6 +937,31 @@ $("btn-clear-key").onclick = async () => {
   await loadSettings();
   await rescan();
 };
+$("pref-autoupdate").addEventListener("change", async (e) => {
+  try {
+    await invoke("set_prefs", { autoUpdate: e.target.checked });
+    if (settings) settings.auto_update = e.target.checked;
+    toast(e.target.checked ? "Updates will install when AddonForge opens" : "Updates wait for you again");
+  } catch (err) {
+    toast(String(err), true);
+  }
+});
+$("btn-backup-wtf").onclick = async () => {
+  const btn = $("btn-backup-wtf");
+  btn.innerHTML = '<span class="spinner"></span> Zipping';
+  setBusy(true);
+  try {
+    const r = await invoke("backup_wtf");
+    const mb = (r.bytes / 1048576).toFixed(1);
+    toast(`Backed up ${r.files} file${r.files === 1 ? "" : "s"} (${mb} MB) to ${r.path}`);
+  } catch (err) {
+    toast(String(err), true);
+  } finally {
+    setBusy(false);
+    btn.textContent = "Back up the WTF folder";
+  }
+};
+$("btn-open-backups").onclick = () => invoke("open_backups_folder").catch((err) => toast(String(err), true));
 $("pref-prerelease").addEventListener("change", async (e) => {
   try {
     await invoke("set_prefs", { allowPrerelease: e.target.checked });
@@ -1061,7 +1119,9 @@ $("selfupdate-go").onclick = async () => {
   }
   if (settings && settings.install_path) {
     await rescan();
-    checkUpdates();
+    await checkUpdates();
+    if (settings.auto_update) await updateAll();
+    liveHint();
   } else {
     document.querySelector('.tab[data-tab="settings"]').click();
   }
