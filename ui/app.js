@@ -439,7 +439,7 @@ function renderCatalog() {
         .map((e) => {
           const src = e.github ? `GitHub · ${e.github}` : e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge only";
           const fv = e.forever === true ? `<span class="badge forever">Forever</span>` : e.forever === false ? `<span class="badge not-forever">No Forever build</span>` : "";
-          const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
+          const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key) || (e.curse && !e.curse_locked && settings?.has_curse);
           const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
           return `<div class="item" data-id="${esc(e.id)}">
             <div class="c-name clickable" data-detail="${esc(e.id)}" title="Details">${iconTile("c", e.id, e.name)}<div class="nm-wrap"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div></div>
@@ -484,7 +484,7 @@ function sourceLabel(e) {
   return e.github ? `GitHub \u00b7 ${e.github}` : e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge";
 }
 function entryUrl(e) {
-  return e.url || (e.github ? "https://github.com/" + e.github : e.wago ? "https://addons.wago.io/addons/" + e.wago : e.wowi ? "https://www.wowinterface.com/downloads/info" + e.wowi : e.curse ? "https://www.curseforge.com/wow/addons/search?search=" + encodeURIComponent(e.name) : "");
+  return e.url || (e.github ? "https://github.com/" + e.github : e.wago ? "https://addons.wago.io/addons/" + e.wago : e.wowi ? "https://www.wowinterface.com/downloads/info" + e.wowi : e.curse ? "https://www.curseforge.com/projects/" + e.curse : "");
 }
 async function openDetail(id, installedPackage = null) {
   const entry = catalog.find((x) => x.id === id);
@@ -511,7 +511,7 @@ async function openDetail(id, installedPackage = null) {
   $("detail-desc").textContent = e.desc || "";
   const localInfo = installedPackage ? `<div class="muted">Folders: ${installedPackage.folders.map(esc).join(", ")}</div>` : "";
   $("detail-body").innerHTML = localInfo + (e.github ? '<div class="muted"><span class="spinner"></span> Reading its README\u2026</div>' : "");
-  const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
+  const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key) || (e.curse && !e.curse_locked && settings?.has_curse);
   const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
   $("detail-install").textContent = e.installed ? "Reinstall" : "Install";
   $("detail-install").classList.toggle("hidden", !canInstall);
@@ -581,7 +581,7 @@ function renderFeatured() {
   $("featured-hint").textContent = pick.hint;
   $("featured-list").innerHTML = pick.items
     .map((e) => {
-      const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key);
+      const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key) || (e.curse && !e.curse_locked && settings?.has_curse);
       const meta = [e.category, e.downloads != null ? `${fmtCount(e.downloads)} downloads` : "", e.updated_at ? ago(e.updated_at) : ""].filter(Boolean).join(" · ");
       return `<div class="feat" data-id="${esc(e.id)}">${iconTile("c", e.id, e.name)}<div class="feat-body">
         <div class="feat-name" data-detail="${esc(e.id)}">${esc(e.name)}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</div>
@@ -602,6 +602,79 @@ $("featured-list").addEventListener("click", async (e) => {
   if (!btn || busy) return;
   const entry = catalog.find((x) => x.id === btn.closest(".feat").dataset.id);
   if (entry) await installCatalog(entry, false);
+});
+
+// ---------------------------------------------------------------- CurseForge search
+let curseRows = [];
+function renderCurseResults(rows, query) {
+  curseRows = rows;
+  const box = $("curse-results");
+  if (!rows.length && !query) { box.classList.add("hidden"); $("curse-list").innerHTML = ""; return; }
+  $("curse-title").textContent = rows.length ? `CurseForge: ${rows.length} result${rows.length === 1 ? "" : "s"} for "${query}"` : `CurseForge: nothing for "${query}"`;
+  $("curse-list").innerHTML = rows
+    .map((r) => {
+      const state = r.installed ? '<span class="badge ok">installed</span>'
+        : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
+        : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app">link only</span>`;
+      const listed = r.catalog_id ? ' <span class="badge forever" title="Also in the AddonForge catalogue">listed</span>' : "";
+      return `<div class="item" data-id="${r.id}">
+        <div class="c-name"><div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a>${listed}<div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
+        <div class="c-cat muted">${esc(r.authors)}</div>
+        <div class="c-dl"><b>${fmtCount(r.downloads)}</b></div>
+        <div class="c-act">${state}</div>
+      </div>`;
+    })
+    .join("");
+  box.classList.remove("hidden");
+  setBusy(busy);
+}
+
+async function searchCurse() {
+  const q = $("curse-query").value.trim();
+  if (q.length < 2) return toast("Type at least two letters", true);
+  const btn = $("btn-curse-search");
+  btn.innerHTML = '<span class="spinner"></span> Searching';
+  try {
+    const rows = await invoke("curse_search", { query: q });
+    renderCurseResults(rows, q);
+  } catch (err) {
+    toast(String(err), true);
+  } finally {
+    btn.textContent = "Search";
+  }
+}
+$("btn-curse-search").onclick = searchCurse;
+$("curse-query").addEventListener("keydown", (e) => { if (e.key === "Enter") searchCurse(); });
+$("btn-curse-clear").onclick = () => { $("curse-query").value = ""; renderCurseResults([], ""); };
+$("curse-list").addEventListener("click", async (e) => {
+  const btn = e.target.closest("button[data-act=curse-install]");
+  if (!btn || busy) return;
+  const id = Number(btn.closest(".item").dataset.id);
+  const row = curseRows.find((r) => r.id === id);
+  if (!row) return;
+  setBusy(true);
+  btn.innerHTML = '<span class="spinner"></span> Installing';
+  try {
+    const p = await invoke("install_curse", { id, allowNonForever: false });
+    toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
+    row.installed = true;
+    renderCurseResults(curseRows, $("curse-query").value.trim());
+    await rescan(true);
+    renderCatalog();
+  } catch (err) {
+    if (String(err) === "NOT_FOREVER") {
+      setBusy(false);
+      const ok = await confirmModal(`<p><b>${esc(row.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">Install it anyway?</p>`, "Install anyway");
+      if (ok) { try { await invoke("install_curse", { id, allowNonForever: true }); row.installed = true; } catch (e2) { toast(explainError(e2), true); } }
+      renderCurseResults(curseRows, $("curse-query").value.trim());
+      await rescan(true);
+      return;
+    }
+    toast(explainError(err), true);
+    btn.textContent = "Install";
+  } finally {
+    setBusy(false);
+  }
 });
 
 // ---------------------------------------------------------------- starter packs
@@ -767,6 +840,7 @@ async function loadSettings() {
     : "No game folder selected — choose one in Settings";
   $("install-line").classList.toggle("connected", !!settings.install);
   $("svfix-note").classList.toggle("hidden", !settings.svfix);
+  $("curse-row").classList.toggle("hidden", !settings.has_curse);
   $("footer-open-folder").disabled = !settings.install;
 }
 
@@ -1003,7 +1077,8 @@ $("selfupdate-go").onclick = async () => {
   }
   loadCatalog(false);
   checkSelf(false);
-  if (settings?.start_tab?.startsWith("detail:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); openDetail(settings.start_tab.slice(7)); }
+  if (settings?.start_tab?.startsWith("search:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); $("curse-query").value = settings.start_tab.slice(7); searchCurse(); }
+  else if (settings?.start_tab?.startsWith("detail:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); openDetail(settings.start_tab.slice(7)); }
   else if (settings?.start_tab === "guide") { document.querySelector(`.tab[data-tab="start"]`)?.click(); $("guide").open = true; }
   else if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();
   // One-time note on the first launch after an update.

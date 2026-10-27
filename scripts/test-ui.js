@@ -57,6 +57,19 @@ assert.equal(run("pickFeatured('2026-10-03').items[0].blurb"), 'hi');
 assert.equal(run("pickFeatured('2026-10-09').title"), 'New in the catalogue');
 assert.equal(run("pickFeatured('2026-12-01').title"), 'Recently updated');
 run(`catalog = []; featuredRaw = [];`);
+// CurseForge results: installable, opted-out (link only), already installed, and the empty case.
+run(`renderCurseResults([
+  {id:1,name:'TomTom <x>',summary:'Nav',authors:'A',downloads:1500,url:'https://www.curseforge.com/projects/1',installable:true,installed:false,catalog_id:null},
+  {id:2,name:'Leatrix',summary:'QoL',authors:'B',downloads:70000000,url:'u',installable:false,installed:false,catalog_id:'leatrix-plus'},
+  {id:3,name:'Questie',summary:'Q',authors:'C',downloads:5,url:'u',installable:true,installed:true,catalog_id:'questie'}
+], 'tom');`);
+assert.match(element('curse-list').innerHTML, /TomTom &lt;x&gt;/);
+assert.match(element('curse-list').innerHTML, /data-act="curse-install"/);
+assert.match(element('curse-list').innerHTML, /link only/);
+assert.match(element('curse-list').innerHTML, /installed/);
+assert.equal(String(element('curse-title').textContent), 'CurseForge: 3 results for "tom"');
+run(`renderCurseResults([], '');`);
+assert.equal(element('curse-list').innerHTML, '');
 run(`packages = []; renderInstalled()`);
 assert.equal(String(element('stat-updates').textContent), '0');
 assert.match(element('installed-list').innerHTML, /Discover addons/);

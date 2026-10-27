@@ -59,6 +59,10 @@ pub struct CatalogEntry {
     /// once Blizzard fixes X". Changing it is a catalogue edit, no release needed.
     #[serde(default)]
     pub notice: Option<String>,
+    /// The author has switched off third-party downloads on CurseForge, so
+    /// the `curse` id is a link only even in builds that carry the API key.
+    #[serde(default)]
+    pub curse_locked: bool,
     /// Date the entry was added (YYYY-MM-DD). Feeds "New in the catalogue".
     #[serde(default)]
     pub added: Option<String>,

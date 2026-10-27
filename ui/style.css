@@ -81,6 +81,9 @@ input::placeholder { color: var(--dim); }
 /* table */
 .thead, .item { display: grid; align-items: center; gap: 0 12px; padding: 0 8px; }
 .cols-installed, #installed-list .item { grid-template-columns: minmax(0, 1.5fr) 140px minmax(0, 1fr) 150px 118px; }
+.cols-curse, #curse-list .item { grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr) 110px 90px; }
+#curse-results { margin-bottom: 6px; }
+#curse-results .section-title { margin-top: 4px; }
 .cols-browse, #browse-list .item { grid-template-columns: minmax(0, 2fr) 110px 100px minmax(0, 1.2fr) 90px; }
 .thead { color: var(--dim); font-size: 11px; padding-top: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
 .list { display: block; }
