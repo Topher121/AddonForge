@@ -74,14 +74,7 @@ for (const [i, b] of (cat.bundles || []).entries()) {
   else for (const id of b.addons) if (!known.has(id)) problems.push(`${where}: unknown addon id "${id}"`);
 }
 
-// featured: free author spotlights with a date range
-for (const [i, f] of (cat.featured || []).entries()) {
-  const where = `featured[${i}]${f && f.id ? ` (${f.id})` : ""}`;
-  if (!f || typeof f.id !== "string" || !known.has(f.id)) problems.push(`${where}: unknown addon id`);
-  if (!dateRe.test(f.from || "") || !dateRe.test(f.to || "")) problems.push(`${where}: "from" and "to" must be YYYY-MM-DD`);
-  else if (f.to < f.from) problems.push(`${where}: "to" is before "from"`);
-  if (f.blurb !== undefined && (typeof f.blurb !== "string" || f.blurb.length > 140)) problems.push(`${where}: "blurb" must be one sentence (140 chars max)`);
-}
+if ("featured" in cat) problems.push('"featured" was removed in build 20: starter packs are the only spotlight now');
 
 if (problems.length) {
   console.error(`catalog/forever.json: ${problems.length} problem(s)\n` + problems.map((p) => `  - ${p}`).join("\n"));
