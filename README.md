@@ -91,6 +91,7 @@ Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and
 ## Support
 
 Bugs and ideas: use **Report a problem** in the app's Settings tab (it fills in the diagnostics), open an issue, or email PocketForgeStudios@proton.me.
+Questions, requests and chat: the [Pocket Forge Studios Discord](https://discord.gg/2qyV5kxT9h), channel #addonforge.
 If AddonForge saves you some hassle, [a tip on Ko-fi](https://ko-fi.com/pocketforgestudios) keeps the lights on. No pressure.
 
 Made by Pocket Forge Studios. MIT licensed, see [LICENSE](LICENSE).
