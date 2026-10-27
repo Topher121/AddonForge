@@ -241,3 +241,74 @@ pub async fn resolve(
     let rel: ApiRelease = resp.error_for_status()?.json().await?;
     from_api_release(client, repo, rel, asset_hint).await
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{json, Value};
+
+    fn bundle_manifest() -> Value {
+        json!({
+            "releases": [{
+                "filename": "Questie-v12.2.0+v1.0.7.zip",
+                "nolib": false,
+                "metadata": [{"flavor": "forever", "interface": 16001}]
+            }],
+            "questie": {"version": "12.2.0"},
+            "questiedb": {"version": "1.0.7"}
+        })
+    }
+
+    fn pick(manifest: Value, prerelease: bool) -> anyhow::Result<Remote> {
+        pick_from_release_json(
+            serde_json::from_value(manifest)?,
+            |name| format!("https://example.test/download/{name}"),
+            prerelease,
+        )
+    }
+
+    #[test]
+    fn bundle_uses_whole_package_filename_as_version() {
+        let remote = pick(bundle_manifest(), false).unwrap();
+        assert_eq!(remote.version, "Questie-v12.2.0+v1.0.7");
+        assert_eq!(remote.filename, "Questie-v12.2.0+v1.0.7.zip");
+        assert_eq!(remote.download_url, "https://example.test/download/Questie-v12.2.0+v1.0.7.zip");
+        assert_eq!(remote.forever, Some(true));
+        assert!(!remote.prerelease);
+    }
+
+    #[test]
+    fn database_only_bundle_release_changes_package_version() {
+        let current = pick(bundle_manifest(), false).unwrap();
+        let mut next_manifest = bundle_manifest();
+        next_manifest["releases"][0]["filename"] = json!("Questie-v12.2.0+v1.0.8.zip");
+        next_manifest["questiedb"]["version"] = json!("1.0.8");
+        let next = pick(next_manifest, false).unwrap();
+        assert_eq!(next.version, "Questie-v12.2.0+v1.0.8");
+        assert_ne!(next.version, current.version);
+        assert_eq!(next.download_url, "https://example.test/download/Questie-v12.2.0+v1.0.8.zip");
+    }
+
+    #[test]
+    fn explicit_release_version_takes_precedence_over_filename() {
+        let legacy = json!({"releases": [{"version": "v2.4", "filename": "Addon.zip"}]});
+        let remote = pick(legacy, false).unwrap();
+        assert_eq!(remote.version, "v2.4");
+    }
+
+    #[test]
+    fn bundle_preserves_flavor_and_prerelease_selection() {
+        let mut manifest = bundle_manifest();
+        manifest["releases"] = json!([
+            {"filename": "retail.zip", "metadata": [{"flavor": "mainline", "interface": 120000}]},
+            {"filename": "nolib.zip", "nolib": true, "metadata": [{"flavor": "forever", "interface": 16001}]},
+            {"filename": "bundle-beta.zip", "metadata": [{"flavor": "camelot", "interface": 16001}]}
+        ]);
+        let remote = pick(manifest, true).unwrap();
+        assert_eq!(remote.version, "bundle-beta");
+        assert_eq!(remote.filename, "bundle-beta.zip");
+        assert_eq!(remote.download_url, "https://example.test/download/bundle-beta.zip");
+        assert_eq!(remote.forever, Some(true));
+        assert!(remote.prerelease);
+    }
+}
