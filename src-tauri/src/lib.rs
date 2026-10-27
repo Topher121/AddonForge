@@ -1089,11 +1089,39 @@ async fn install_curse(
     refreshed(&app, &key).await
 }
 
+/// The source the user picked in the Find addons row ("github", "curse",
+/// "wago", "wowi", "tukui"), checked against what the entry actually offers.
+fn chosen_source(e: &CatalogEntry, kind: &str, has_wago: bool) -> Result<Source, String> {
+    let missing = || format!("{kind} isn't listed as a source for {}", e.name);
+    match kind {
+        "github" => e.github.clone().map(Source::Github).ok_or_else(missing),
+        "curse" => {
+            if !sources::curseforge::available() {
+                return Err("CurseForge isn't available in this build".into());
+            }
+            if e.curse_locked {
+                return Err(format!("{}'s author only distributes it through CurseForge's own app", e.name));
+            }
+            e.curse.map(Source::Curse).ok_or_else(missing)
+        }
+        "wago" => {
+            if !has_wago {
+                return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
+            }
+            e.wago.clone().map(Source::Wago).ok_or_else(missing)
+        }
+        "wowi" => e.wowi.map(Source::Wowi).ok_or_else(missing),
+        "tukui" => e.tukui.clone().map(Source::Tukui).ok_or_else(missing),
+        other => Err(format!("Unknown source {other}")),
+    }
+}
+
 #[tauri::command]
 async fn install_catalog(
     app: State<'_, Shared>,
     id: String,
     allow_non_forever: Option<bool>,
+    source: Option<String>,
 ) -> Result<Package, String> {
     let cat = catalog_cached(&app).await;
     let e = cat
@@ -1104,11 +1132,17 @@ async fn install_catalog(
         .ok_or_else(|| "Not in the catalogue".to_string())?;
     let st = app.state.lock().await.clone();
     let has_wago = st.has_wago_key();
-    let src = pick_source(Some(&e), &AddonFolder::default(), has_wago, None)
-        .ok_or_else(|| "This catalogue entry has no downloadable source".to_string())?;
-    if matches!(src, Source::Wago(_)) && !has_wago {
-        return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
-    }
+    let src = match source.as_deref().filter(|s| !s.is_empty()) {
+        Some(kind) => chosen_source(&e, kind, has_wago)?,
+        None => {
+            let s = pick_source(Some(&e), &AddonFolder::default(), has_wago, None)
+                .ok_or_else(|| "This catalogue entry has no downloadable source".to_string())?;
+            if matches!(s, Source::Wago(_)) && !has_wago {
+                return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
+            }
+            s
+        }
+    };
     let key = key_for_source(&cat, &st, &src, None);
     install_from(&app, &key, &src, e.asset_hint.as_deref(), allow_non_forever.unwrap_or(false)).await?;
     refreshed(&app, &key).await
@@ -1698,6 +1732,22 @@ pub fn finish_replace(old: &Path) {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chosen_source_respects_what_the_entry_offers() {
+        let mut e = CatalogEntry::default();
+        e.name = "Thing".into();
+        e.github = Some("a/b".into());
+        e.curse = Some(5);
+        e.wago = Some("w".into());
+        assert!(matches!(chosen_source(&e, "github", false), Ok(Source::Github(r)) if r == "a/b"));
+        assert!(chosen_source(&e, "wago", false).is_err(), "wago needs a key");
+        assert!(matches!(chosen_source(&e, "wago", true), Ok(Source::Wago(_))));
+        assert!(chosen_source(&e, "wowi", true).is_err(), "not listed");
+        assert!(chosen_source(&e, "bogus", true).is_err());
+        e.curse_locked = true;
+        assert!(chosen_source(&e, "curse", true).is_err(), "opted-out authors stay link only");
+    }
+
     use super::*;
 
     fn folder(name: &str, deps: &[&str], part_of: Option<&str>) -> AddonFolder {

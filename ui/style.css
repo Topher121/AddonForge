@@ -310,3 +310,12 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 @media(max-width:1000px) { .installed-toolbar { gap:7px; } .installed-toolbar input[type=search] { width:180px; } #installed-view { max-width:150px; } .cols-installed,#installed-list .item { grid-template-columns:minmax(155px,1.5fr) 72px 72px 75px 112px 100px; gap:0 8px; } .attention-count { display:none; } }
 @media(max-width:860px) { .cols-installed { display:grid; } #installed-list .c-ver,#installed-list .c-src,#installed-list .c-status { grid-column:auto; } .cols-installed,#installed-list .item { grid-template-columns:minmax(145px,1fr) 64px 64px 65px 105px 94px; gap:0 6px; padding-left:9px; padding-right:9px; } .top { padding:0 20px; height:36px; } .name { font-size:21px; } main { padding-left:14px; padding-right:14px; } .installed-toolbar .grow { display:none; } .installed-toolbar input[type=search] { flex:1; } }
 @media(max-width:700px) { .addon-table { overflow-x:auto; } .cols-installed,#installed-list { min-width:665px; } .tabs { gap:14px; } .game-settings { font-size:11px; } }
+
+/* One search bar on Find addons (build 20): GitHub offer row, source picker, CurseForge section */
+.offer { display:flex; align-items:center; gap:12px; padding:8px 10px; margin:0 0 10px; border:1px solid var(--line-2); border-radius:3px; font-size:12px; color:var(--muted); }
+.offer b { color:var(--text); font-weight:600; }
+.src-pick { max-width:100%; padding:3px 6px; font-size:12px; }
+#curse-results { margin-top:18px; }
+#curse-results .section-title { padding-bottom:6px; }
+#browse-filter { flex:1; min-width:220px; max-width:420px; }
+#browse-list .empty.slim { padding:14px 0; }
