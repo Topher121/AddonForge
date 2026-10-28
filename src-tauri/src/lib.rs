@@ -1119,6 +1119,8 @@ struct CurseRow {
     name: String,
     summary: String,
     authors: String,
+    /// CurseForge's first category for the project, for the list's Category column.
+    category: String,
     downloads: u64,
     url: String,
     /// False when the author only distributes through CurseForge's own app.
@@ -1135,14 +1137,27 @@ struct CurseSearch {
     total: u64,
 }
 
-/// Search CurseForge's Forever addons; an empty query is the popularity
-/// list. Results live in memory only.
+/// One page (50) of CurseForge's Forever addons: text filter (empty = all),
+/// sort, category id, offset. Results live in memory only.
 #[tauri::command]
-async fn curse_search(app: State<'_, Shared>, query: String) -> Result<CurseSearch, String> {
+async fn curse_search(
+    app: State<'_, Shared>,
+    query: String,
+    sort: Option<String>,
+    category: Option<u64>,
+    index: Option<u32>,
+) -> Result<CurseSearch, String> {
     if !sources::curseforge::available() {
         return Err("CurseForge isn't available in this build".into());
     }
-    let (mods, total) = sources::curseforge::search_page(&app.client, &query, 25).await.map_err(err)?;
+    let page = sources::curseforge::Page {
+        query,
+        sort: sources::curseforge::Sort::parse(sort.as_deref().unwrap_or("")),
+        category,
+        index: index.unwrap_or(0),
+        limit: 50,
+    };
+    let (mods, total) = sources::curseforge::search_page(&app.client, &page).await.map_err(err)?;
     let cat = catalog_cached(&app).await;
     let st = app.state.lock().await.clone();
     let have: Vec<Package> = scan_packages(&app).await.unwrap_or_default();
@@ -1164,6 +1179,7 @@ async fn curse_search(app: State<'_, Shared>, query: String) -> Result<CurseSear
                 name: m.name.clone(),
                 summary: m.summary.clone(),
                 authors: m.authors.iter().map(|a| a.name.as_str()).collect::<Vec<_>>().join(", "),
+                category: m.categories.first().map(|c| c.name.clone()).unwrap_or_default(),
                 downloads: m.download_count,
                 url: if m.links.website_url.is_empty() { sources::curseforge::project_url(m.id) } else { m.links.website_url.clone() },
                 installable,

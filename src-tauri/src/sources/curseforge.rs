@@ -60,6 +60,55 @@ pub struct ModInfo {
     pub latest_files: Vec<FileInfo>,
     #[serde(default)]
     pub latest_files_indexes: Vec<FileIndex>,
+    #[serde(default)]
+    pub categories: Vec<Category>,
+}
+
+#[derive(Deserialize, Clone, Debug, Default)]
+pub struct Category {
+    #[serde(default)]
+    pub id: u64,
+    #[serde(default)]
+    pub name: String,
+}
+
+/// How a list page is ordered. Maps to CurseForge's `sortField`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sort {
+    Popularity,
+    Downloads,
+    Updated,
+    Name,
+}
+
+impl Sort {
+    pub fn parse(s: &str) -> Sort {
+        match s {
+            "downloads" => Sort::Downloads,
+            "updated" => Sort::Updated,
+            "name" => Sort::Name,
+            _ => Sort::Popularity,
+        }
+    }
+    fn query(self) -> &'static str {
+        match self {
+            Sort::Popularity => "sortField=2&sortOrder=desc",
+            Sort::Downloads => "sortField=6&sortOrder=desc",
+            Sort::Updated => "sortField=3&sortOrder=desc",
+            Sort::Name => "sortField=4&sortOrder=asc",
+        }
+    }
+}
+
+/// One request's worth of the list: text filter (may be empty), order,
+/// one CurseForge category id, and the offset into the result set.
+#[derive(Clone, Debug)]
+pub struct Page {
+    pub query: String,
+    pub sort: Sort,
+    pub category: Option<u64>,
+    pub index: u32,
+    pub limit: usize,
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]
@@ -205,20 +254,27 @@ pub async fn prefetch(client: &reqwest::Client, ids: &[u64]) -> anyhow::Result<u
 
 /// Forever addons matching `query`, most popular first. Not cached.
 pub async fn search(client: &reqwest::Client, query: &str, limit: usize) -> anyhow::Result<Vec<ModInfo>> {
-    Ok(search_page(client, query, limit).await?.0)
+    let page = Page { query: query.into(), sort: Sort::Popularity, category: None, index: 0, limit };
+    Ok(search_page(client, &page).await?.0)
 }
 
-/// One page of Forever addons by popularity, plus CurseForge's total count
-/// for the query. An empty query is the plain popularity list.
-pub async fn search_page(client: &reqwest::Client, query: &str, limit: usize) -> anyhow::Result<(Vec<ModInfo>, u64)> {
-    let q = query.trim();
+/// One page of Forever addons plus CurseForge's total count for the
+/// filter. An empty query is the whole list. One request per call,
+/// nothing kept beyond the 15-minute in-memory mod cache.
+pub async fn search_page(client: &reqwest::Client, page: &Page) -> anyhow::Result<(Vec<ModInfo>, u64)> {
+    let q = page.query.trim();
     if !q.is_empty() && q.len() < 2 {
         return Ok((Vec::new(), 0));
     }
     let mut url = format!(
-        "{BASE}/mods/search?gameId={GAME_ID}&gameVersionTypeId={FOREVER_TYPE}&sortField=2&sortOrder=desc&pageSize={}",
-        limit.clamp(1, 50)
+        "{BASE}/mods/search?gameId={GAME_ID}&gameVersionTypeId={FOREVER_TYPE}&{}&pageSize={}&index={}",
+        page.sort.query(),
+        page.limit.clamp(1, 50),
+        page.index.min(9950)
     );
+    if let Some(c) = page.category {
+        url.push_str(&format!("&categoryId={c}"));
+    }
     if !q.is_empty() {
         url.push_str("&searchFilter=");
         url.push_str(&urlencoding(q));
