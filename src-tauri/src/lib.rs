@@ -1834,12 +1834,14 @@ pub fn finish_replace(old: &Path) {
 mod tests {
     #[test]
     fn live_folder_beats_beta_folder() {
+        // Forward slashes: a separator on every platform CI runs on.
         let mk = |p: &str| WowInstall { path: p.into(), product: "x".into(), flavor: "forever".into(), label: "WoW: Forever".into() };
-        let both = vec![mk(r"C:\\WoW\\_classic_beta_"), mk(r"C:\\WoW\\_forever_")];
-        assert_eq!(preferred_forever(&both).unwrap().path, r"C:\\WoW\\_forever_");
-        let beta_only = vec![mk(r"C:\\WoW\\_classic_beta_")];
-        assert_eq!(preferred_forever(&beta_only).unwrap().path, r"C:\\WoW\\_classic_beta_");
+        let both = vec![mk("wow/_classic_beta_"), mk("wow/_forever_")];
+        assert_eq!(preferred_forever(&both).unwrap().path, "wow/_forever_");
+        let beta_only = vec![mk("wow/_classic_beta_")];
+        assert_eq!(preferred_forever(&beta_only).unwrap().path, "wow/_classic_beta_");
         assert!(preferred_forever(&[]).is_none());
+        assert_eq!(folder_name("wow/_Forever_"), "_forever_");
     }
 
     #[test]
