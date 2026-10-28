@@ -1128,17 +1128,25 @@ struct CurseRow {
     installed: bool,
 }
 
-/// Search CurseForge's Forever addons. Results live in memory only.
+#[derive(Serialize, Clone)]
+struct CurseSearch {
+    rows: Vec<CurseRow>,
+    /// How many Forever addons CurseForge has for this query (all of them when empty).
+    total: u64,
+}
+
+/// Search CurseForge's Forever addons; an empty query is the popularity
+/// list. Results live in memory only.
 #[tauri::command]
-async fn curse_search(app: State<'_, Shared>, query: String) -> Result<Vec<CurseRow>, String> {
+async fn curse_search(app: State<'_, Shared>, query: String) -> Result<CurseSearch, String> {
     if !sources::curseforge::available() {
         return Err("CurseForge isn't available in this build".into());
     }
-    let mods = sources::curseforge::search(&app.client, &query, 25).await.map_err(err)?;
+    let (mods, total) = sources::curseforge::search_page(&app.client, &query, 25).await.map_err(err)?;
     let cat = catalog_cached(&app).await;
     let st = app.state.lock().await.clone();
     let have: Vec<Package> = scan_packages(&app).await.unwrap_or_default();
-    Ok(mods
+    let rows: Vec<CurseRow> = mods
         .into_iter()
         .map(|m| {
             let entry = cat.addons.iter().find(|e| e.curse == Some(m.id));
@@ -1163,7 +1171,8 @@ async fn curse_search(app: State<'_, Shared>, query: String) -> Result<Vec<Curse
                 installed,
             }
         })
-        .collect())
+        .collect();
+    Ok(CurseSearch { rows, total })
 }
 
 /// Install a CurseForge project by id (from search). Catalogue entries that
@@ -1467,6 +1476,33 @@ struct WhatsNew {
     notes: String,
 }
 
+/// Every build's note between the one last seen and the one running, oldest
+/// first, each headed by its build number when there is more than one.
+/// Falls back to the single current note (older manifests have no history).
+fn whats_new_text(l: &selfupdate::Latest, last_seen: u32, current: u32) -> String {
+    let mut entries: Vec<&selfupdate::HistoryNote> = l
+        .history
+        .iter()
+        .filter(|h| h.build <= current && (last_seen == 0 || h.build > last_seen) && !h.notes.trim().is_empty())
+        .collect();
+    entries.sort_by_key(|h| h.build);
+    entries.dedup_by_key(|h| h.build);
+    if last_seen == 0 {
+        entries.retain(|h| h.build == current);
+    }
+    if entries.is_empty() {
+        return l.notes.clone();
+    }
+    if entries.len() == 1 {
+        return entries[0].notes.clone();
+    }
+    entries
+        .iter()
+        .map(|h| format!("Build {}{}\n{}", h.build, if h.version.is_empty() { String::new() } else { format!(" (v{})", h.version) }, h.notes.trim()))
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
 #[tauri::command]
 async fn whats_new(app: State<'_, Shared>) -> Result<Option<WhatsNew>, String> {
     let current = selfupdate::build();
@@ -1490,8 +1526,11 @@ async fn whats_new(app: State<'_, Shared>) -> Result<Option<WhatsNew>, String> {
         let url = std::env::var("ADDONFORGE_UPDATE_URL").ok();
         let r = selfupdate::check(&app.client, url.as_deref()).await;
         if let Some(l) = r.latest {
-            if l.build == current && !l.notes.trim().is_empty() {
-                result = Some(WhatsNew { version: l.version, build: l.build, notes: l.notes });
+            if l.build == current {
+                let notes = whats_new_text(&l, last, current);
+                if !notes.trim().is_empty() {
+                    result = Some(WhatsNew { version: l.version, build: l.build, notes });
+                }
             }
         }
     }
@@ -1842,6 +1881,21 @@ mod tests {
         assert_eq!(preferred_forever(&beta_only).unwrap().path, "wow/_classic_beta_");
         assert!(preferred_forever(&[]).is_none());
         assert_eq!(folder_name("wow/_Forever_"), "_forever_");
+    }
+
+    #[test]
+    fn whats_new_joins_skipped_builds() {
+        use selfupdate::{HistoryNote, Latest};
+        let h = |b: u32, n: &str| HistoryNote { version: "0.4.0".into(), build: b, notes: n.into() };
+        let l = Latest { version: "0.4.0".into(), build: 22, notes: "twenty-two".into(), history: vec![h(22, "twenty-two"), h(21, "twenty-one"), h(20, "twenty"), h(19, "nineteen")], ..Default::default() };
+        let t = whats_new_text(&l, 19, 22);
+        assert!(t.starts_with("Build 20 (v0.4.0)\ntwenty"), "{t}");
+        assert!(t.contains("Build 21") && t.ends_with("twenty-two"));
+        assert!(!t.contains("nineteen"));
+        assert_eq!(whats_new_text(&l, 21, 22), "twenty-two");
+        assert_eq!(whats_new_text(&l, 0, 22), "twenty-two", "no record of a previous build: just this one");
+        let bare = Latest { build: 22, notes: "only".into(), ..Default::default() };
+        assert_eq!(whats_new_text(&bare, 19, 22), "only");
     }
 
     #[test]

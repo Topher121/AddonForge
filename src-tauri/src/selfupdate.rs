@@ -45,6 +45,20 @@ pub struct Latest {
     pub notes: String,
     #[serde(default)]
     pub size: u64,
+    /// Recent builds' notes, newest first, so a user who skipped builds
+    /// still reads what changed in each of them.
+    #[serde(default)]
+    pub history: Vec<HistoryNote>,
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct HistoryNote {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub build: u32,
+    #[serde(default)]
+    pub notes: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
