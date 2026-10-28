@@ -467,7 +467,6 @@ function installSources(e) {
   const out = [];
   if (e.github) out.push({ kind: "github", label: "GitHub", title: `GitHub \u00b7 ${e.github}`, url: "https://github.com/" + e.github });
   if (e.curse && !e.curse_locked && settings?.has_curse) out.push({ kind: "curse", label: "CurseForge", url: "https://www.curseforge.com/projects/" + e.curse });
-  if (e.wago && settings?.has_wago_key) out.push({ kind: "wago", label: "Wago", url: "https://addons.wago.io/addons/" + e.wago });
   if (e.wowi) out.push({ kind: "wowi", label: "WoWInterface", url: "https://www.wowinterface.com/downloads/info" + e.wowi });
   if (e.tukui) out.push({ kind: "tukui", label: "TukUI", url: "https://www.tukui.org/addons.php?id=" + e.tukui });
   return out;
@@ -490,7 +489,6 @@ function renderCatalog() {
         .map((e) => {
           const srcs = installSources(e);
           const fv = e.forever === true ? `<span class="badge forever">Forever</span>` : e.forever === false ? `<span class="badge not-forever">No Forever build</span>` : "";
-          const needsKey = e.wago && !srcs.length && !settings?.has_wago_key;
           const srcCell = srcs.length > 1
             ? `<select class="src-pick" aria-label="Install from">${srcs.map((s) => `<option value="${s.kind}">${esc(s.label)}</option>`).join("")}</select>`
             : srcs.length === 1
@@ -502,7 +500,7 @@ function renderCatalog() {
             <div class="c-dl" title="${e.downloads != null ? esc(e.downloads.toLocaleString() + " downloads, all time, counted on " + (e.stat_source === "wowi" ? "WoWInterface" : "GitHub")) : "No download count for this source"}">${e.downloads != null ? `<b>${fmtCount(e.downloads)}</b>` : `<span class="muted">\u2014</span>`}${e.updated_at ? `<div class="sub-line">${ago(e.updated_at)}</div>` : ""}</div>
             <div class="c-src">${srcCell}</div>
             <div class="c-act">
-              ${srcs.length ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : needsKey ? `<span class="badge no-key">needs Wago key</span>` : `<span class="badge curse-only">link only</span>`}
+              ${srcs.length ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : `<span class="badge curse-only">link only</span>`}
             </div>
           </div>`;
         })
@@ -570,11 +568,10 @@ async function openDetail(id, installedPackage = null) {
   $("detail-desc").textContent = e.desc || "";
   const localInfo = installedPackage ? `<div class="muted">Folders: ${installedPackage.folders.map(esc).join(", ")}</div>` : "";
   $("detail-body").innerHTML = localInfo + (e.github ? '<div class="muted"><span class="spinner"></span> Reading its README\u2026</div>' : "");
-  const canInstall = e.github || e.wowi || e.tukui || (e.wago && settings?.has_wago_key) || (e.curse && !e.curse_locked && settings?.has_curse);
-  const needsKey = e.wago && !e.github && !e.wowi && !e.tukui && !settings?.has_wago_key;
+  const canInstall = e.github || e.wowi || e.tukui || (e.curse && !e.curse_locked && settings?.has_curse);
   $("detail-install").textContent = e.installed ? "Reinstall" : "Install";
   $("detail-install").classList.toggle("hidden", !canInstall);
-  $("detail-note").textContent = needsKey ? "Needs a Wago key (Settings)." : canInstall ? "" : installedPackage ? "Manage this addon from its row menu." : "Not installable from here: get it from its page.";
+  $("detail-note").textContent = canInstall ? "" : installedPackage ? "Manage this addon from its row menu." : "Not installable from here: get it from its page.";
   $("detail-open").classList.toggle("hidden", !entryUrl(e));
   $("detail").classList.remove("hidden");
   $("detail-close").focus();
@@ -915,8 +912,6 @@ async function loadSettings() {
   $("version").textContent = "v" + settings.version + (settings.build ? " build " + settings.build : " (dev)");
   $("state-file").textContent = settings.state_file;
   $("install-path").value = settings.install_path || "";
-  $("wago-link").dataset.url = settings.wago_key_url;
-  $("wago-status").textContent = settings.has_wago_key ? "A key is saved." : "No key saved. Wago-only addons show as \"Needs Wago key\" and stay link-only.";
   $("pref-prerelease").checked = !!settings.allow_prerelease;
   $("pref-autoupdate").checked = !!settings.auto_update;
   $("catalog-info").textContent = settings.catalog_count
@@ -984,57 +979,6 @@ $("btn-pick").onclick = async () => {
 $("footer-open-folder").onclick = () => $("btn-open-folder").click();
 $("btn-open-folder").onclick = () => invoke("open_addons_folder").catch((e) => toast(String(e), true));
 $("btn-open-log").onclick = () => invoke("open_log").catch((e) => toast(String(e), true));
-$("btn-save-key").onclick = async () => {
-  try {
-    await invoke("set_wago_key", { key: $("wago-key").value });
-    $("wago-key").value = "";
-    toast("Wago key saved");
-    await loadSettings();
-    await rescan();
-  } catch (err) {
-    toast(String(err), true);
-  }
-};
-$("btn-clear-key").onclick = async () => {
-  await invoke("set_wago_key", { key: "" });
-  toast("Wago key cleared");
-  await loadSettings();
-  await rescan();
-};
-$("pref-autoupdate").addEventListener("change", async (e) => {
-  try {
-    await invoke("set_prefs", { autoUpdate: e.target.checked });
-    if (settings) settings.auto_update = e.target.checked;
-    toast(e.target.checked ? "Updates will install when AddonForge opens" : "Updates wait for you again");
-  } catch (err) {
-    toast(String(err), true);
-  }
-});
-$("btn-backup-wtf").onclick = async () => {
-  const btn = $("btn-backup-wtf");
-  btn.innerHTML = '<span class="spinner"></span> Zipping';
-  setBusy(true);
-  try {
-    const r = await invoke("backup_wtf");
-    const mb = (r.bytes / 1048576).toFixed(1);
-    toast(`Backed up ${r.files} file${r.files === 1 ? "" : "s"} (${mb} MB) to ${r.path}`);
-  } catch (err) {
-    toast(String(err), true);
-  } finally {
-    setBusy(false);
-    btn.textContent = "Back up the WTF folder";
-  }
-};
-$("btn-open-backups").onclick = () => invoke("open_backups_folder").catch((err) => toast(String(err), true));
-$("pref-prerelease").addEventListener("change", async (e) => {
-  try {
-    await invoke("set_prefs", { allowPrerelease: e.target.checked });
-    toast(e.target.checked ? "Pre-releases included. Check for updates to see them." : "Pre-releases excluded");
-  } catch (err) {
-    toast(String(err), true);
-  }
-});
-
 // ---------------------------------------------------------------- export / import
 $("btn-export").onclick = async () => {
   try {

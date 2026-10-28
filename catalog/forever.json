@@ -1347,6 +1347,7 @@
       "desc": "Catches Lua errors quietly. BugSack needs it.",
       "category": "Utility",
       "wago": "7x61oyG1",
+      "curse": 13344,
       "folders": [
         "!BugGrabber"
       ],

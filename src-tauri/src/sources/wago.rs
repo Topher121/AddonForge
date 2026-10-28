@@ -8,7 +8,6 @@
 use super::Remote;
 use serde_json::Value;
 
-pub const KEY_URL: &str = "https://addons.wago.io/patreon";
 
 pub async fn resolve(
     client: &reqwest::Client,
