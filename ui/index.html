@@ -64,6 +64,8 @@
   <section id="tab-browse" class="panel">
     <div class="toolbar">
       <input id="browse-filter" type="search" placeholder="Search addons" aria-label="Search addons" spellcheck="false">
+      <label class="lbl" for="browse-cat">Type</label>
+      <select id="browse-cat" aria-label="Addon type"><option value="">All types</option></select>
       <label class="lbl" for="browse-sort">Sort</label>
       <select id="browse-sort" aria-label="Sort catalogue">
         <option value="name">Name</option>
@@ -83,11 +85,11 @@
     </div>
     <div id="browse-list" class="list"></div>
     <div id="curse-results" class="hidden">
-      <div class="section-title"><span id="curse-title">More from CurseForge</span> <span class="hint inline" id="curse-hint"></span></div>
-      <div class="thead cols-curse" aria-hidden="true">
-        <span>Addon</span><span>By</span><span>Downloads</span><span></span>
-      </div>
       <div id="curse-list" class="list"></div>
+      <div id="curse-foot" class="more">
+        <span id="curse-status" class="hint inline"></span>
+        <button id="btn-curse-more" class="btn hidden">Show 50 more</button>
+      </div>
     </div>
     <p class="hint">The catalogue is a public list on GitHub. Add an addon with a pull request and it downloads straight from the author's own releases.</p>
   </section>

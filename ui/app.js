@@ -483,7 +483,8 @@ function githubRepoFrom(text) {
 
 function renderCatalog() {
   const q = $("browse-filter").value.trim().toLowerCase();
-  const rows = sortedCatalog(catalog.filter((e) => !q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q)));
+  const type = typeFor($("browse-cat").value);
+  const rows = sortedCatalog(catalog.filter((e) => catalogMatchesType(e, type) && (!q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q))));
   $("browse-list").innerHTML = rows.length
     ? rows
         .map((e) => {
@@ -507,7 +508,7 @@ function renderCatalog() {
         })
         .join("")
     : `<div class="empty${q ? " slim" : ""}">${q ? "Nothing in the catalogue matches." : "Nothing here."}</div>`;
-  $("browse-summary").textContent = q ? `${rows.length} of ${catalog.length}` : `${catalog.length} in the catalogue${curseTotal ? ` \u00b7 ${curseTotal.toLocaleString()} more on CurseForge` : ""}`;
+  $("browse-summary").textContent = q || type ? `${rows.length} of ${catalog.length}` : `${catalog.length} in the catalogue${curse.total ? ` \u00b7 ${curse.total.toLocaleString()} more on CurseForge` : ""}`;
   const repo = q ? githubRepoFrom($("browse-filter").value) : null;
   $("gh-offer").classList.toggle("hidden", !repo);
   if (repo) $("gh-offer-repo").textContent = repo;
@@ -531,6 +532,7 @@ async function loadCatalog(refresh) {
 
 $("browse-filter").addEventListener("input", renderCatalog);
 $("browse-sort").addEventListener("change", renderCatalog);
+$("browse-cat").addEventListener("change", renderCatalog);
 
 // ---------------------------------------------------------------- details window
 let detailId = null;
@@ -608,107 +610,137 @@ $("detail-install").onclick = async () => {
   renderBundles();
 };
 
-// ---------------------------------------------------------------- CurseForge search
-// Fed by the same search box as the catalogue. Projects already in the
-// catalogue are left out here because their catalogue row is the better one.
-let curseRows = [];
-let curseQuery = "";
-let curseSeq = 0;
-let curseTimer = null;
-let curseTotal = 0;
-let popular = null; // CurseForge's popularity page, fetched once per session
-let popularLoading = false;
-function renderCurseResults(rows, query) {
-  curseRows = rows;
-  curseQuery = query;
+// ---------------------------------------------------------------- the CurseForge part of the list
+// Fed by the same search box, sort and type filter as the catalogue. Projects
+// already in the catalogue are left out (their catalogue row is the better
+// one). Fifty at a time, one request per page, nothing kept on disk.
+const TYPES = [
+  { id: "actionbars", label: "Action bars", cats: ["Action bars"], curse: 1018 },
+  { id: "auction", label: "Auction house", cats: ["Auction house"], curse: 1002 },
+  { id: "bags", label: "Bags & items", cats: ["Bags", "Items", "Loot"], curse: 1009 },
+  { id: "bosses", label: "Boss encounters", cats: ["Bosses"], curse: 1014 },
+  { id: "buffs", label: "Buffs & debuffs", cats: ["Buffs"], curse: 1005 },
+  { id: "chat", label: "Chat & social", cats: ["Chat", "Social", "Group"], curse: 1001 },
+  { id: "class", label: "Class", cats: ["Class"], curse: 1020 },
+  { id: "combat", label: "Combat", cats: ["Combat", "Nameplates"], curse: 1019 },
+  { id: "collections", label: "Achievements & collections", cats: ["Collections", "Fun"], curse: 1067 },
+  { id: "map", label: "Map & minimap", cats: ["Minimap", "World"], curse: 1011 },
+  { id: "professions", label: "Professions", cats: ["Professions"], curse: 1015 },
+  { id: "pvp", label: "PvP", cats: ["PvP"], curse: 1004 },
+  { id: "quests", label: "Quests & leveling", cats: ["Quests", "Leveling", "Reputation"], curse: 1013 },
+  { id: "tooltips", label: "Tooltips", cats: ["Tooltips"], curse: 1055 },
+  { id: "ui", label: "UI", cats: ["UI"], curse: 1039 },
+  { id: "unitframes", label: "Unit frames", cats: ["Unit frames"], curse: 1016 },
+  { id: "utility", label: "Utility", cats: ["Utility", "Dev"], curse: 1017 },
+];
+$("browse-cat").innerHTML = '<option value="">All types</option>' + TYPES.map((t) => `<option value="${t.id}">${esc(t.label)}</option>`).join("");
+function typeFor(id) {
+  return TYPES.find((t) => t.id === id) || null;
+}
+function catalogMatchesType(e, t) {
+  return !t || t.cats.some((c) => c.toLowerCase() === String(e.category || "").toLowerCase());
+}
+
+const curse = { key: "", query: "", rows: [], total: 0, loaded: 0, loading: false, seq: 0, timer: null };
+function curseParams() {
+  const q = $("browse-filter").value.trim();
+  const type = typeFor($("browse-cat").value);
+  return { query: q, sort: $("browse-sort").value || "downloads", category: type ? type.curse : null, key: `${q}|${$("browse-sort").value}|${type ? type.id : ""}` };
+}
+
+function renderCurseRows() {
   const box = $("curse-results");
-  if (!rows.length && !query) { box.classList.add("hidden"); $("curse-list").innerHTML = ""; return; }
-  $("curse-title").textContent = rows.length
-    ? (query ? `More from CurseForge` : `Popular on CurseForge`)
-    : `Nothing more on CurseForge for "${query}"`;
-  $("curse-hint").textContent = query ? "" : `Type a name to search all ${curseTotal ? curseTotal.toLocaleString() : ""} Forever addons on CurseForge.`;
-  $("curse-list").innerHTML = rows
+  if (!settings?.has_curse) return box.classList.add("hidden");
+  $("curse-list").innerHTML = curse.rows
     .map((r) => {
-      const state = r.installed ? '<span class="badge ok">installed</span>'
+      const act = r.installed ? '<span class="badge ok">installed</span>'
         : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
-        : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app">link only</span>`;
+        : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app; the link opens its page">link only</span>`;
       return `<div class="item" data-id="${r.id}">
-        <div class="c-name"><div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a><div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
-        <div class="c-cat muted">${esc(r.authors)}</div>
+        <div class="c-name">${iconTile("cf", String(r.id), r.name)}<div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a><div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
+        <div class="c-cat muted">${esc(r.category || "")}</div>
         <div class="c-dl"><b>${fmtCount(r.downloads)}</b></div>
-        <div class="c-act">${state}</div>
+        <div class="c-src"><a href="#" data-url="${esc(r.url)}">CurseForge</a></div>
+        <div class="c-act">${act}</div>
       </div>`;
     })
     .join("");
-  box.classList.remove("hidden");
+  const more = curse.loaded < curse.total;
+  $("btn-curse-more").classList.toggle("hidden", !more || curse.loading);
+  $("curse-status").textContent = curse.loading
+    ? "Loading from CurseForge\u2026"
+    : !curse.rows.length && curse.query
+      ? `Nothing on CurseForge for "${curse.query}".`
+      : more
+        ? `${curse.rows.length.toLocaleString()} of ${curse.total.toLocaleString()} from CurseForge`
+        : "";
+  box.classList.toggle("hidden", !curse.rows.length && !curse.loading && !curse.query);
   setBusy(busy);
 }
 
-function scheduleCurseSearch(q) {
-  clearTimeout(curseTimer);
+// Load the first page for the current box/sort/type, or the next page.
+async function loadCurse(more = false) {
   if (!settings?.has_curse) return;
-  if (!q) {
-    curseSeq++;
-    return showPopular();
+  const p = curseParams();
+  if (p.query.length === 1 || githubRepoFrom(p.query)) {
+    curse.seq++;
+    Object.assign(curse, { key: "", query: p.query, rows: [], total: 0, loaded: 0, loading: false });
+    return renderCurseRows();
   }
-  if (q.length < 2 || githubRepoFrom(q)) {
-    curseSeq++;
-    if (curseQuery || curseRows.length) renderCurseResults([], "");
-    return;
+  if (!more) {
+    if (p.key === curse.key) return;
+    Object.assign(curse, { key: p.key, query: p.query, rows: [], total: 0, loaded: 0 });
   }
-  if (q === curseQuery) return;
-  curseTimer = setTimeout(() => searchCurse(q), 450);
-}
-
-// With the box empty: CurseForge's most popular Forever addons, minus the
-// ones the catalogue already lists. One call per session.
-async function showPopular() {
-  if (popular) return renderCurseResults(popular, "");
-  if (popularLoading) return;
-  popularLoading = true;
+  const seq = ++curse.seq;
+  curse.loading = true;
+  renderCurseRows();
   try {
-    const r = await invoke("curse_search", { query: "" });
-    curseTotal = r.total || 0;
-    popular = r.rows.filter((x) => !x.catalog_id);
-    if (!$("browse-filter").value.trim()) {
-      renderCurseResults(popular, "");
-      renderCatalog();
-    }
-  } catch (_) {
-    popular = null;
-  } finally {
-    popularLoading = false;
-  }
-}
-
-async function searchCurse(q) {
-  const seq = ++curseSeq;
-  if (!q) q = $("browse-filter").value.trim();
-  if (q.length < 2) return;
-  $("curse-title").textContent = "Searching CurseForge\u2026";
-  $("curse-results").classList.remove("hidden");
-  try {
-    const r = await invoke("curse_search", { query: q });
-    if (seq !== curseSeq) return;
-    renderCurseResults(r.rows.filter((x) => !x.catalog_id), q);
+    const r = await invoke("curse_search", { query: p.query, sort: p.sort, category: p.category, index: curse.loaded });
+    if (seq !== curse.seq) return;
+    curse.loaded += r.rows.length;
+    curse.total = r.total || 0;
+    const have = new Set(curse.rows.map((x) => x.id));
+    curse.rows.push(...r.rows.filter((x) => !x.catalog_id && !have.has(x.id)));
+    if (!r.rows.length) curse.total = curse.loaded; // CurseForge ran out early
   } catch (err) {
-    if (seq !== curseSeq) return;
-    renderCurseResults([], "");
+    if (seq !== curse.seq) return;
+    curse.key = "";
     toast(String(err), true);
+  } finally {
+    if (seq === curse.seq) {
+      curse.loading = false;
+      renderCurseRows();
+      renderCatalogSummary();
+    }
   }
 }
+function renderCatalogSummary() {
+  const q = $("browse-filter").value.trim();
+  const type = typeFor($("browse-cat").value);
+  if (!q && !type) $("browse-summary").textContent = `${catalog.length} in the catalogue${curse.total ? ` \u00b7 ${curse.total.toLocaleString()} more on CurseForge` : ""}`;
+}
+
+// Typing waits half a second; sort and type changes go at once.
+function scheduleCurseSearch(q) {
+  clearTimeout(curse.timer);
+  if (!settings?.has_curse) return;
+  const p = curseParams();
+  if (p.key === curse.key) return;
+  if (q && p.query !== curse.query) curse.timer = setTimeout(() => loadCurse(false), 450);
+  else loadCurse(false);
+}
+$("btn-curse-more").onclick = () => loadCurse(true);
 $("browse-filter").addEventListener("keydown", (e) => {
   if (e.key !== "Enter") return;
-  const q = $("browse-filter").value.trim();
-  if (githubRepoFrom(q)) return installGithub(false);
-  clearTimeout(curseTimer);
-  if (q !== curseQuery) searchCurse(q);
+  if (githubRepoFrom($("browse-filter").value.trim())) return installGithub(false);
+  clearTimeout(curse.timer);
+  loadCurse(false);
 });
 $("curse-list").addEventListener("click", async (e) => {
   const btn = e.target.closest("button[data-act=curse-install]");
   if (!btn || busy) return;
   const id = Number(btn.closest(".item").dataset.id);
-  const row = curseRows.find((r) => r.id === id);
+  const row = curse.rows.find((r) => r.id === id);
   if (!row) return;
   setBusy(true);
   btn.innerHTML = '<span class="spinner"></span> Installing';
@@ -716,8 +748,7 @@ $("curse-list").addEventListener("click", async (e) => {
     const p = await invoke("install_curse", { id, allowNonForever: false });
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     row.installed = true;
-    for (const x of popular || []) if (x.id === id) x.installed = true;
-    renderCurseResults(curseRows, curseQuery);
+    renderCurseRows();
     await rescan(true);
     renderCatalog();
   } catch (err) {
@@ -725,7 +756,7 @@ $("curse-list").addEventListener("click", async (e) => {
       setBusy(false);
       const ok = await confirmModal(`<p><b>${esc(row.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">Install it anyway?</p>`, "Install anyway");
       if (ok) { try { await invoke("install_curse", { id, allowNonForever: true }); row.installed = true; } catch (e2) { toast(explainError(e2), true); } }
-      renderCurseResults(curseRows, curseQuery);
+      renderCurseRows();
       await rescan(true);
       return;
     }
@@ -1160,7 +1191,7 @@ $("selfupdate-go").onclick = async () => {
   }
   loadCatalog(false);
   checkSelf(false);
-  if (settings?.start_tab?.startsWith("search:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); $("browse-filter").value = settings.start_tab.slice(7); renderCatalog(); clearTimeout(curseTimer); searchCurse(settings.start_tab.slice(7)); }
+  if (settings?.start_tab?.startsWith("search:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); $("browse-filter").value = settings.start_tab.slice(7); renderCatalog(); clearTimeout(curse.timer); loadCurse(false); }
   else if (settings?.start_tab?.startsWith("detail:")) { await loadCatalog(false); document.querySelector(`.tab[data-tab="browse"]`)?.click(); openDetail(settings.start_tab.slice(7)); }
   else if (settings?.start_tab === "guide") { document.querySelector(`.tab[data-tab="start"]`)?.click(); $("guide").open = true; }
   else if (settings?.start_tab) document.querySelector(`.tab[data-tab="${settings.start_tab}"]`)?.click();
