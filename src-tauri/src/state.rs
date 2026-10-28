@@ -25,7 +25,9 @@ pub struct AppState {
     /// Product folder we manage, e.g. `C:\...\World of Warcraft\_classic_beta_`.
     #[serde(default)]
     pub install_path: Option<String>,
-    /// Optional user-supplied Wago Addons API key (stored locally only).
+    /// A Wago Addons API key from before build 25. Unused now (Wago's updater
+    /// keys went Patreon-only and the source was dropped); kept so older
+    /// state files still load.
     #[serde(default)]
     pub wago_key: Option<String>,
     /// Packages we installed ourselves, keyed by package key.
@@ -94,9 +96,5 @@ impl AppState {
         }
         fs::rename(&tmp, &final_path)?;
         Ok(())
-    }
-
-    pub fn has_wago_key(&self) -> bool {
-        self.wago_key.as_deref().map(|k| !k.trim().is_empty()).unwrap_or(false)
     }
 }

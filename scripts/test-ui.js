@@ -71,6 +71,23 @@ assert.equal(run("catalogMatchesType({category:'UI'}, typeFor('bags'))"), false)
 assert.equal(run("catalogMatchesType({category:'UI'}, typeFor(''))"), true);
 assert.equal(run("typeFor('pvp').curse"), 1004);
 run(`settings = null; curse.rows = []; curse.query = '';`);
+// Source picker: one source is a link, several become a select; Wago ids and locked CurseForge ids never count.
+run(`settings = { has_curse: true };
+catalog = [
+  { id:'one', name:'One', github:'x/one' },
+  { id:'two', name:'Two', github:'x/two', curse: 7, wago: 'w' },
+  { id:'locked', name:'Locked', curse: 8, curse_locked: true },
+  { id:'wagoonly', name:'WagoOnly', wago: 'w2' },
+];
+document.getElementById('browse-filter').value = ''; document.getElementById('browse-cat').value = ''; renderCatalog();`);
+assert.equal(run("installSources(catalog[0]).length"), 1);
+assert.equal(run("installSources(catalog[1]).map(s => s.kind).join()"), 'github,curse', 'a Wago id never makes a source');
+assert.equal(run("installSources(catalog[2]).length"), 0);
+assert.equal(run("installSources(catalog[3]).length"), 0, 'Wago-only is link only');
+assert.match(element('browse-list').innerHTML, /<select class="src-pick"[^>]*><option value="github">GitHub/);
+assert.match(element('browse-list').innerHTML, /link only/);
+assert.doesNotMatch(element('browse-list').innerHTML, /Wago key/);
+run(`settings = null; catalog = [];`);
 run(`packages = []; renderInstalled()`);
 assert.equal(String(element('stat-updates').textContent), '0');
 assert.match(element('installed-list').innerHTML, /Discover addons/);

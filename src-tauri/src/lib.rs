@@ -92,13 +92,16 @@ fn addons_dir(install: &str) -> PathBuf {
 fn pick_source(
     entry: Option<&CatalogEntry>,
     f: &AddonFolder,
-    has_wago: bool,
     managed: Option<&Installed>,
 ) -> Option<Source> {
-    // What we installed it from wins: it's what the user chose.
+    // What we installed it from wins: it's what the user chose. Wago is the
+    // exception since build 25: its updater keys went Patreon-only, so a
+    // package once installed from Wago falls through to any other source.
     if let Some(m) = managed {
         if let Some(s) = Source::from_parts(&m.source, &m.source_id) {
-            return Some(s);
+            if !matches!(s, Source::Wago(_)) {
+                return Some(s);
+            }
         }
     }
     if let Some(e) = entry {
@@ -110,25 +113,11 @@ fn pick_source(
                 return Some(Source::Curse(c));
             }
         }
-        if has_wago {
-            if let Some(w) = &e.wago {
-                return Some(Source::Wago(w.clone()));
-            }
-        }
         if let Some(i) = e.wowi {
             return Some(Source::Wowi(i));
         }
         if let Some(t) = &e.tukui {
             return Some(Source::Tukui(t.clone()));
-        }
-        if let Some(w) = &e.wago {
-            // Listed but user has no key: surface it so the UI can explain.
-            return Some(Source::Wago(w.clone()));
-        }
-    }
-    if has_wago {
-        if let Some(w) = &f.wago {
-            return Some(Source::Wago(w.clone()));
         }
     }
     if sources::curseforge::available() {
@@ -138,9 +127,6 @@ fn pick_source(
     }
     if let Some(i) = f.wowi {
         return Some(Source::Wowi(i));
-    }
-    if let Some(w) = &f.wago {
-        return Some(Source::Wago(w.clone()));
     }
     if let Some(site) = &f.website {
         if let Some(repo) = sources::parse_github_repo(site) {
@@ -170,7 +156,6 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             by_wowi.insert(i, e);
         }
     }
-    let has_wago = st.has_wago_key();
 
     // Folders we installed ourselves are authoritative: they stay with their package.
     let mut managed_folder: HashMap<String, &str> = HashMap::new();
@@ -342,8 +327,8 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             .or_else(|| entry.filter(|e| e.group_required_dependencies).and_then(|_| primary.version.clone()))
             .or_else(|| fs.iter().find_map(|f| f.version.clone()))
             .filter(|v| !v.is_empty() && !v.starts_with('@'));
-        let source = pick_source(entry, primary, has_wago, managed)
-            .or_else(|| fs.iter().find_map(|f| pick_source(None, f, has_wago, None)));
+        let source = pick_source(entry, primary, managed)
+            .or_else(|| fs.iter().find_map(|f| pick_source(None, f, None)));
         let curse_id = entry.and_then(|e| e.curse).or_else(|| fs.iter().find_map(|f| f.curse));
         let supports_forever = fs.iter().any(|f| f.supports_forever());
 
@@ -368,9 +353,9 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         }
 
         let (status, note) = match &source {
-            Some(Source::Wago(_)) if !has_wago => (
-                "no-key".to_string(),
-                "On Wago: updating needs a Wago key (Patreon supporters only), see Settings".to_string(),
+            Some(Source::Wago(_)) => (
+                "no-source".to_string(),
+                "Wago isn't a source any more (its updater keys are Patreon-only): reinstall from GitHub or CurseForge".to_string(),
             ),
             Some(_) => ("unknown".to_string(), String::new()),
             None if curse_id.is_some() => (
@@ -542,13 +527,13 @@ fn record_install(st: &mut AppState, key: &str, rec: &Installed) {
 async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
     let Some(src) = pkg.source.clone() else { return };
     let st = app.state.lock().await.clone();
-    if matches!(src, Source::Wago(_)) && !st.has_wago_key() {
+    if matches!(src, Source::Wago(_)) {
         return;
     }
     let (hint, vouched) = entry_hint(cat, pkg);
     let opts = ResolveOpts {
         asset_hint: hint.as_deref(),
-        wago_key: st.wago_key.as_deref(),
+        wago_key: None,
         prerelease: st.allow_prerelease,
     };
     match sources::resolve(&app.client, &src, opts).await {
@@ -612,7 +597,6 @@ struct Settings {
     build: u32,
     install_path: Option<String>,
     install: Option<WowInstall>,
-    has_wago_key: bool,
     allow_prerelease: bool,
     ignored_count: usize,
     state_file: String,
@@ -620,7 +604,6 @@ struct Settings {
     catalog_source: Option<String>,
     catalog_updated: Option<String>,
     catalog_count: usize,
-    wago_key_url: String,
     repo_url: String,
     support_email: String,
     /// `ADDONFORGE_TAB=browse|settings` opens on that tab (screenshots, testing).
@@ -643,7 +626,6 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         build: selfupdate::build(),
         install_path: st.install_path.clone(),
         install,
-        has_wago_key: st.has_wago_key(),
         allow_prerelease: st.allow_prerelease,
         ignored_count: st.ignored.len(),
         state_file: AppState::path().to_string_lossy().to_string(),
@@ -651,7 +633,6 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         catalog_source: cat.as_ref().map(|c| c.1.to_string()),
         catalog_updated: cat.as_ref().map(|c| c.0.updated.clone()),
         catalog_count: cat.as_ref().map(|c| c.0.addons.len()).unwrap_or(0),
-        wago_key_url: sources::wago::KEY_URL.into(),
         repo_url: REPO_URL.into(),
         support_email: SUPPORT_EMAIL.into(),
         start_tab: std::env::var("ADDONFORGE_TAB").ok().filter(|t| !t.is_empty()),
@@ -782,15 +763,6 @@ async fn set_install_path(app: State<'_, Shared>, path: String) -> Result<WowIns
 }
 
 #[tauri::command]
-async fn set_wago_key(app: State<'_, Shared>, key: String) -> Result<bool, String> {
-    let mut st = app.state.lock().await;
-    let k = key.trim().to_string();
-    st.wago_key = if k.is_empty() { None } else { Some(k) };
-    st.save().map_err(err)?;
-    Ok(st.wago_key.is_some())
-}
-
-#[tauri::command]
 async fn set_prefs(app: State<'_, Shared>, allow_prerelease: Option<bool>, auto_update: Option<bool>) -> Result<(), String> {
     let mut st = app.state.lock().await;
     if let Some(v) = allow_prerelease {
@@ -872,7 +844,7 @@ async fn install_from(
     let entry = entry_for_source(&cat, key, src);
     let opts = ResolveOpts {
         asset_hint,
-        wago_key: st.wago_key.as_deref(),
+        wago_key: None,
         prerelease: st.allow_prerelease,
     };
     let remote = sources::resolve(&app.client, src, opts).await.map_err(err)?;
@@ -1016,7 +988,6 @@ struct BundleView {
 #[tauri::command]
 async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
     let cat = catalog_cached(&app).await;
-    let has_wago = app.state.lock().await.has_wago_key();
     let installed_ids = scan_packages(&app).await.map(installed_catalog_ids).unwrap_or_default();
     Ok(cat
         .bundles
@@ -1039,8 +1010,8 @@ async fn bundles(app: State<'_, Shared>) -> Result<Vec<BundleView>, String> {
                         id: e.id.clone(),
                         name: e.name.clone(),
                         desc: e.desc.clone(),
-                        installable: direct || (e.wago.is_some() && has_wago),
-                        needs_key: !direct && e.wago.is_some() && !has_wago,
+                        installable: direct,
+                        needs_key: false,
                         installed: installed_ids.contains(&e.id),
                         forever: e.forever,
                     }
@@ -1212,7 +1183,7 @@ async fn install_curse(
 
 /// The source the user picked in the Find addons row ("github", "curse",
 /// "wago", "wowi", "tukui"), checked against what the entry actually offers.
-fn chosen_source(e: &CatalogEntry, kind: &str, has_wago: bool) -> Result<Source, String> {
+fn chosen_source(e: &CatalogEntry, kind: &str) -> Result<Source, String> {
     let missing = || format!("{kind} isn't listed as a source for {}", e.name);
     match kind {
         "github" => e.github.clone().map(Source::Github).ok_or_else(missing),
@@ -1225,12 +1196,7 @@ fn chosen_source(e: &CatalogEntry, kind: &str, has_wago: bool) -> Result<Source,
             }
             e.curse.map(Source::Curse).ok_or_else(missing)
         }
-        "wago" => {
-            if !has_wago {
-                return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
-            }
-            e.wago.clone().map(Source::Wago).ok_or_else(missing)
-        }
+        "wago" => Err("Wago isn't a source any more: its updater keys are Patreon-only".into()),
         "wowi" => e.wowi.map(Source::Wowi).ok_or_else(missing),
         "tukui" => e.tukui.clone().map(Source::Tukui).ok_or_else(missing),
         other => Err(format!("Unknown source {other}")),
@@ -1252,17 +1218,10 @@ async fn install_catalog(
         .cloned()
         .ok_or_else(|| "Not in the catalogue".to_string())?;
     let st = app.state.lock().await.clone();
-    let has_wago = st.has_wago_key();
     let src = match source.as_deref().filter(|s| !s.is_empty()) {
-        Some(kind) => chosen_source(&e, kind, has_wago)?,
-        None => {
-            let s = pick_source(Some(&e), &AddonFolder::default(), has_wago, None)
-                .ok_or_else(|| "This catalogue entry has no downloadable source".to_string())?;
-            if matches!(s, Source::Wago(_)) && !has_wago {
-                return Err("This addon is on Wago: updating needs a Wago key (Patreon supporters only), see Settings".into());
-            }
-            s
-        }
+        Some(kind) => chosen_source(&e, kind)?,
+        None => pick_source(Some(&e), &AddonFolder::default(), None)
+            .ok_or_else(|| "This catalogue entry has no downloadable source".to_string())?,
     };
     let key = key_for_source(&cat, &st, &src, None);
     install_from(&app, &key, &src, e.asset_hint.as_deref(), allow_non_forever.unwrap_or(false)).await?;
@@ -1410,7 +1369,6 @@ async fn import_list(app: State<'_, Shared>, path: String) -> Result<Vec<ImportR
     let have: Vec<String> = scan_packages(&app).await?.into_iter().map(|p| p.key).collect();
     let cat = catalog_cached(&app).await;
     let st = app.state.lock().await.clone();
-    let has_wago = st.has_wago_key();
     Ok(file
         .addons
         .into_iter()
@@ -1420,7 +1378,7 @@ async fn import_list(app: State<'_, Shared>, path: String) -> Result<Vec<ImportR
             let installed = have.contains(&key);
             let (installable, why) = match &it.source {
                 None => (false, "no source (probably CurseForge-only or a personal addon)".into()),
-                Some(Source::Wago(_)) if !has_wago => (false, "needs a Wago key".into()),
+                Some(Source::Wago(_)) => (false, "Wago isn't a source any more".into()),
                 Some(_) => (true, String::new()),
             };
             ImportRow { name: it.name, key, source: it.source, installed, installable, why }
@@ -1572,8 +1530,7 @@ async fn diagnostics(app: State<'_, Shared>) -> Result<String, String> {
         None => s.push_str("Install: none selected\n"),
     }
     s.push_str(&format!(
-        "Wago key: {} | CurseForge: {} | pre-releases: {} | pinned: {} | ignored: {}\n",
-        if st.has_wago_key() { "yes" } else { "no" },
+        "CurseForge: {} | pre-releases: {} | pinned: {} | ignored: {}\n",
         if sources::curseforge::available() { "yes" } else { "no" },
         st.allow_prerelease,
         st.pinned.len(),
@@ -1658,7 +1615,6 @@ pub fn cli(args: &[String]) -> i32 {
             "resolve" => {
                 let cat = catalog_cached(&app).await;
                 let st = app.state.lock().await.clone();
-                let has_wago = st.has_wago_key();
                 let want: Vec<&CatalogEntry> = if args.get(1).map(String::as_str) == Some("all") {
                     cat.addons.iter().collect()
                 } else {
@@ -1673,14 +1629,14 @@ pub fn cli(args: &[String]) -> i32 {
                     let st = st.clone();
                     set.spawn(async move {
                         let _p = sem.acquire().await;
-                        let src = pick_source(Some(&e), &AddonFolder::default(), has_wago, None);
+                        let src = pick_source(Some(&e), &AddonFolder::default(), None);
                         let r = match &src {
                             Some(s) => sources::resolve(
                                 &app.client,
                                 s,
                                 ResolveOpts {
                                     asset_hint: e.asset_hint.as_deref(),
-                                    wago_key: st.wago_key.as_deref(),
+                                    wago_key: None,
                                     prerelease: st.allow_prerelease,
                                 },
                             )
@@ -1723,8 +1679,7 @@ pub fn cli(args: &[String]) -> i32 {
                 let cat = catalog_cached(&app).await;
                 let e = cat.addons.iter().find(|e| &e.id == id).cloned().ok_or("not in catalogue")?;
                 let st = app.state.lock().await.clone();
-                let has_wago = st.has_wago_key();
-                let src = pick_source(Some(&e), &AddonFolder::default(), has_wago, None).ok_or("no source")?;
+                let src = pick_source(Some(&e), &AddonFolder::default(), None).ok_or("no source")?;
                 let force = args.iter().any(|a| a == "--force");
                 let key = key_for_source(&cat, &st, &src, None);
                 let rec = install_from(&app, &key, &src, e.asset_hint.as_deref(), force).await?;
@@ -1849,7 +1804,6 @@ pub fn run() {
             backup_wtf,
             open_backups_folder,
             set_install_path,
-            set_wago_key,
             set_prefs,
             set_pin,
             set_ignore,
@@ -1929,13 +1883,12 @@ mod tests {
         e.github = Some("a/b".into());
         e.curse = Some(5);
         e.wago = Some("w".into());
-        assert!(matches!(chosen_source(&e, "github", false), Ok(Source::Github(r)) if r == "a/b"));
-        assert!(chosen_source(&e, "wago", false).is_err(), "wago needs a key");
-        assert!(matches!(chosen_source(&e, "wago", true), Ok(Source::Wago(_))));
-        assert!(chosen_source(&e, "wowi", true).is_err(), "not listed");
-        assert!(chosen_source(&e, "bogus", true).is_err());
+        assert!(matches!(chosen_source(&e, "github"), Ok(Source::Github(r)) if r == "a/b"));
+        assert!(chosen_source(&e, "wago").is_err(), "Wago is not a source any more");
+        assert!(chosen_source(&e, "wowi").is_err(), "not listed");
+        assert!(chosen_source(&e, "bogus").is_err());
         e.curse_locked = true;
-        assert!(chosen_source(&e, "curse", true).is_err(), "opted-out authors stay link only");
+        assert!(chosen_source(&e, "curse").is_err(), "opted-out authors stay link only");
     }
 
     use super::*;
@@ -2192,9 +2145,11 @@ mod tests {
 
     #[test]
     fn grouped_packages_use_recorded_provider_versions_for_updates() {
-        for (kind, id, installed, available) in [
-            ("github", "author/Atlas", "Atlas-v2.4+v7.1", "Atlas-v2.4+v7.2"),
-            ("wago", "atlas-project", "v2.4+v7.1", "v2.4+v7.2"),
+        // A package recorded as installed from Wago keeps its recorded version
+        // but is checked against the catalogue's GitHub source now (build 25).
+        for (kind, id, installed, available, expect_kind, expect_id) in [
+            ("github", "author/Atlas", "Atlas-v2.4+v7.1", "Atlas-v2.4+v7.2", "github", "author/Atlas"),
+            ("wago", "atlas-project", "v2.4+v7.1", "v2.4+v7.2", "github", "author/Atlas"),
         ] {
             let mut state = AppState::default();
             state.installed.insert("cat:atlas".into(), Installed {
@@ -2203,7 +2158,7 @@ mod tests {
             });
             let package = build_packages(&state, &dependency_catalog(), &dependency_folders()).pop().unwrap();
             assert_eq!(package.installed_version.as_deref(), Some(installed));
-            assert_eq!(package.source, Source::from_parts(kind, id));
+            assert_eq!(package.source, Source::from_parts(expect_kind, expect_id));
             for (version, update) in [(installed, false), (available, true)] {
                 let mut checked = package.clone();
                 apply_remote(&mut checked, remote(version), None);
@@ -2350,9 +2305,9 @@ mod tests {
         ];
         let pkgs = build_packages(&AppState::default(), &Catalog::default(), &folders);
         assert_eq!(pkgs.len(), 1);
-        assert_eq!(pkgs[0].key, "wago:ZKbxbRN1");
+        assert_eq!(pkgs[0].key, "wago:ZKbxbRN1", "the Wago id still names the package");
         assert_eq!(pkgs[0].name, "EllesmereUI");
-        assert_eq!(pkgs[0].source, Some(Source::Wago("ZKbxbRN1".into())));
+        assert_eq!(pkgs[0].source, None, "but Wago is not a source any more");
         assert_eq!(pkgs[0].installed_version.as_deref(), Some("9.6.7"));
         assert_eq!(pkgs[0].folders, vec![
             "EllesmereUI", "EllesmereUIActionBars", "EllesmereUILocales", "EllesmereUIOptions",

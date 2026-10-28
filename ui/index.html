@@ -131,20 +131,8 @@
         <label class="chk big"><input type="checkbox" id="pref-autoupdate"> Update everything when AddonForge opens</label>
         <p class="hint">Installs whatever has an update as soon as the launch check finishes. Pinned and ignored addons are left alone.</p>
         <label class="chk big"><input type="checkbox" id="pref-prerelease"> Include pre-releases and beta builds</label>
-        <p class="hint">For authors who only ship their Forever build as a GitHub pre-release or a Wago beta. Uses the GitHub API for the check, limited to 60 requests an hour without a token.</p>
+        <p class="hint">For authors who only ship their Forever build as a GitHub pre-release. Uses the GitHub API for the check, limited to 60 requests an hour without a token.</p>
         <button id="btn-selfcheck" class="link">Check for an AddonForge update now</button>
-      </div>
-    </div>
-
-    <div class="pref">
-      <div class="pref-label">Wago key <span class="opt">optional</span></div>
-      <div class="pref-body">
-        <div class="row">
-          <input id="wago-key" type="password" aria-label="Wago API key" placeholder="Paste your Wago API key">
-          <button id="btn-save-key" class="btn primary">Save</button>
-          <button id="btn-clear-key" class="btn">Clear</button>
-        </div>
-        <p class="hint">Some addons only publish on Wago. Updating from Wago needs an API key, which Wago only gives to its <a href="#" data-url="" id="wago-link">Patreon supporters</a> (from about $3 a month). A key from Wago's developer page will not work for updates. Stored on this PC, only ever sent to addons.wago.io. <span id="wago-status"></span></p>
       </div>
     </div>
 
@@ -199,7 +187,7 @@
       <div class="pref-label">About</div>
       <div class="pref-body about">
         <p>AddonForge <span id="version"></span> by Pocket Forge Studios.</p>
-        <p class="hint">No accounts, no ads, no analytics. Talks only to the addon sites (GitHub, Wago, WoWInterface, TukUI and CurseForge), plus one request to GitHub at launch to see if AddonForge itself has an update. CurseForge search and installs use an API key that ships inside AddonForge; it is only ever sent to api.curseforge.com, and nothing from CurseForge is stored on disk.</p>
+        <p class="hint">No accounts, no ads, no analytics. Talks only to the addon sites (GitHub, CurseForge, WoWInterface and TukUI), plus one request to GitHub at launch to see if AddonForge itself has an update. CurseForge search and installs use an API key that ships inside AddonForge; it is only ever sent to api.curseforge.com, and nothing from CurseForge is stored on disk.</p>
         <p class="hint">Catalogue: <span id="catalog-info">…</span><br>Settings file: <code id="state-file"></code></p>
         <p class="hint"><a href="#" data-url="https://github.com/Topher121/AddonForge">Source code and catalogue</a> · <a href="#" data-url="https://ko-fi.com/pocketforgestudios">Support the dev</a> · <a href="#" data-url="https://discord.gg/2qyV5kxT9h">Discord</a> · <a href="#" data-url="mailto:PocketForgeStudios@proton.me">PocketForgeStudios@proton.me</a></p>
         <p class="hint">Independent project. Not affiliated with CurseForge, Overwolf, Blizzard Entertainment, Wago, WoWInterface or TukUI. World of Warcraft is a trademark of Blizzard Entertainment.</p>

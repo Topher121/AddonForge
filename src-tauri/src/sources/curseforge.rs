@@ -67,8 +67,6 @@ pub struct ModInfo {
 #[derive(Deserialize, Clone, Debug, Default)]
 pub struct Category {
     #[serde(default)]
-    pub id: u64,
-    #[serde(default)]
     pub name: String,
 }
 

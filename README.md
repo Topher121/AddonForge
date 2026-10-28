@@ -47,7 +47,7 @@ Honest version: AddonForge is designed, tested and decided by one person with a 
 | Source | Key needed? | Notes |
 |---|---|---|
 | GitHub releases | No | Preferred. Uses the packager's `release.json` when present. |
-| Wago Addons | Your own key, Patreon only | Wago gives updater keys to its Patreon supporters only (from about $3 a month); keys from its developer page do not work for updates. Paste it in Settings. Stored locally, only sent to addons.wago.io. Without one, Wago-only addons are link-only. |
+| Wago Addons | Link only | Wago gives updater keys to its Patreon supporters only, so AddonForge no longer installs from Wago. Entries that live only there link to their Wago page. |
 | WoWInterface | No | Public JSON API. |
 | TukUI | No | ElvUI / Tukui. |
 | CurseForge | Built in | Search all Forever addons on CurseForge and install the ones whose authors allow third-party downloads (about seven in ten of the popular ones). The API key ships inside release builds, is only ever sent to api.curseforge.com, and nothing from CurseForge is written to disk. Opted-out addons are link only. |
