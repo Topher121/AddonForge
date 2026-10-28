@@ -101,6 +101,18 @@ $whatsNew = $Note
 if ($whatsNew -eq "" -and (Test-Path $notePath)) { $whatsNew = (Get-Content $notePath -Raw).Trim() }
 WriteUtf8NoBom $notePath $whatsNew
 
+# ---- notes history (build\.history.json) ----------------------------------
+# Newest first, last 8 builds. The app shows every note between the build a
+# user last ran and the one they just got, so skipped builds are not lost.
+$historyPath = Join-Path $root "build\.history.json"
+$history = @()
+# PS 5.1 hands a JSON array back as ONE object; ForEach-Object unrolls it.
+if (Test-Path $historyPath) { $history = @((Get-Content $historyPath -Raw | ConvertFrom-Json) | ForEach-Object { $_ }) }
+$history = @($history | Where-Object { $_.build -ne $build })
+$history = @([pscustomobject]@{ version = $version; build = $build; notes = $whatsNew }) + $history
+$history = @($history | Sort-Object -Property build -Descending | Select-Object -First 8)
+WriteUtf8NoBom $historyPath (ConvertTo-Json @($history) -Depth 3)
+
 # ---- latest.json (self-update manifest) ----------------------------------
 # The app fetches https://github.com/Topher121/AddonForge/releases/latest/download/latest.json
 $tag = "v$version-b$build"
@@ -111,9 +123,10 @@ $latest = [ordered]@{
     url      = "https://github.com/Topher121/AddonForge/releases/download/$tag/$name"
     size     = (Get-Item $out).Length
     notes    = $whatsNew
+    history  = @($history)
 }
 $latestPath = Join-Path $root "build\latest.json"
-WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json)
+WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json -Depth 4)
 
 if ($Release) {
     Push-Location $root

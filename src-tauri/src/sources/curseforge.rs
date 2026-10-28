@@ -117,6 +117,20 @@ struct Data<T> {
     data: T,
 }
 
+#[derive(Deserialize)]
+struct Paged<T> {
+    data: T,
+    #[serde(default)]
+    pagination: Pagination,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct Pagination {
+    #[serde(default)]
+    total_count: u64,
+}
+
 fn cache() -> &'static Mutex<HashMap<u64, (Instant, ModInfo)>> {
     static CACHE: OnceLock<Mutex<HashMap<u64, (Instant, ModInfo)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
@@ -191,22 +205,31 @@ pub async fn prefetch(client: &reqwest::Client, ids: &[u64]) -> anyhow::Result<u
 
 /// Forever addons matching `query`, most popular first. Not cached.
 pub async fn search(client: &reqwest::Client, query: &str, limit: usize) -> anyhow::Result<Vec<ModInfo>> {
+    Ok(search_page(client, query, limit).await?.0)
+}
+
+/// One page of Forever addons by popularity, plus CurseForge's total count
+/// for the query. An empty query is the plain popularity list.
+pub async fn search_page(client: &reqwest::Client, query: &str, limit: usize) -> anyhow::Result<(Vec<ModInfo>, u64)> {
     let q = query.trim();
-    if q.len() < 2 {
-        return Ok(Vec::new());
+    if !q.is_empty() && q.len() < 2 {
+        return Ok((Vec::new(), 0));
     }
-    let url = format!(
-        "{BASE}/mods/search?gameId={GAME_ID}&gameVersionTypeId={FOREVER_TYPE}&sortField=2&sortOrder=desc&pageSize={}&searchFilter={}",
-        limit.clamp(1, 50),
-        urlencoding(q)
+    let mut url = format!(
+        "{BASE}/mods/search?gameId={GAME_ID}&gameVersionTypeId={FOREVER_TYPE}&sortField=2&sortOrder=desc&pageSize={}",
+        limit.clamp(1, 50)
     );
+    if !q.is_empty() {
+        url.push_str("&searchFilter=");
+        url.push_str(&urlencoding(q));
+    }
     let resp = request(client, reqwest::Method::GET, url)?.send().await?;
     if let Some(e) = api_error(resp.status().as_u16()) {
         return Err(e);
     }
-    let m: Data<Vec<ModInfo>> = resp.error_for_status()?.json().await?;
+    let m: Paged<Vec<ModInfo>> = resp.error_for_status()?.json().await?;
     remember(&m.data);
-    Ok(m.data)
+    Ok((m.data, m.pagination.total_count))
 }
 
 fn urlencoding(s: &str) -> String {
