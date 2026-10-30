@@ -1,7 +1,7 @@
 // Security gate. Fails (exit 1) if the shipped configuration weakens any protection. Run by `npm run check`,
 // by scripts/selfcheck.js, and by desktop/build.ps1 before every build, so a weakened build cannot be produced.
 //
-// Studio rule (maintainer 2026-10-01): nothing we build may turn off a security protection. 
+// Studio rule: nothing we build may turn off a security protection.
 import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
