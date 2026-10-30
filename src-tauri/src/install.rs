@@ -325,15 +325,31 @@ pub fn safety_scan(root: &Path) -> anyhow::Result<usize> {
 /// replacing same-named folders. Returns the folder names installed.
 /// `protected_folders` maps lowercase folder names to their owning package;
 /// ownership only prevents replacing folders that are still present on disk.
+/// Take the addons lock and hold it until the returned file is dropped. Blocks
+/// while another copy of the app holds it.
+pub fn lock_addons(addons_dir: &Path) -> anyhow::Result<fs::File> {
+    lock_tmp(addons_dir, true).ok_or_else(|| anyhow!("could not lock the addons folder"))
+}
+
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn place(
     zip_path: &Path,
     addons_dir: &Path,
     protected_folders: &HashMap<String, String>,
 ) -> anyhow::Result<Vec<String>> {
-    fs::create_dir_all(addons_dir)?;
     // Held until this install has finished or rolled back, so no other copy of
     // the app can recover or remove its folders in the meantime.
-    let _guard = lock_tmp(addons_dir, true).ok_or_else(|| anyhow!("could not lock the addons folder"))?;
+    let _guard = lock_addons(addons_dir)?;
+    place_locked(zip_path, addons_dir, protected_folders)
+}
+
+/// Like `place`, for callers that already hold the addons lock.
+pub fn place_locked(
+    zip_path: &Path,
+    addons_dir: &Path,
+    protected_folders: &HashMap<String, String>,
+) -> anyhow::Result<Vec<String>> {
+    fs::create_dir_all(addons_dir)?;
     let work = addons_dir.join(TMP_DIR).join(unique());
     let extract_dir = work.join("x");
     let backup_dir = work.join("old");
@@ -421,7 +437,12 @@ pub fn place(
 /// Delete the given addon folders (used by "Remove").
 pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
     // Same lock as installs, so a removal cannot race an install in another copy.
-    let _guard = lock_tmp(addons_dir, true).ok_or_else(|| anyhow!("could not lock the addons folder"))?;
+    let _guard = lock_addons(addons_dir)?;
+    remove_folders_locked(addons_dir, folders)
+}
+
+/// Like `remove_folders`, for callers that already hold the addons lock.
+pub fn remove_folders_locked(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
     let mut gone = Vec::new();
     for f in folders {
         if f.is_empty() || f.starts_with('.') || f.contains("..") || f.contains(['/', '\\']) {
