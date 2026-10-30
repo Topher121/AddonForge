@@ -720,4 +720,24 @@ mod recovery_tests {
         assert!(old.join("Atlas.lua").exists());
         assert!(!addons.join("Atlas").exists());
     }
+
+    #[test]
+    fn removal_waits_for_the_install_lock() {
+        let addons = scratch("remove-lock");
+        let addon = addons.join("Atlas");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(addon.join("Atlas.lua"), "x").unwrap();
+        // Another copy is installing: it holds the lock.
+        let held = lock_tmp(&addons, true).unwrap();
+        let (dir, folders) = (addons.clone(), vec!["Atlas".to_string()]);
+        let worker = std::thread::spawn(move || remove_folders(&dir, &folders));
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        // The removal must still be waiting, not deleting under the install.
+        assert!(addon.exists());
+        drop(held);
+        let gone = worker.join().unwrap().unwrap();
+        assert_eq!(gone, vec!["Atlas".to_string()]);
+        assert!(!addon.exists());
+    }
 }
+
