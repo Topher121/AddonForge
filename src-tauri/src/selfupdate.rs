@@ -208,8 +208,17 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         }
     };
     if !started {
-        restore_previous(&target, &old, &current, portable);
-        anyhow::bail!("the new version did not start, so the previous version was kept");
+        let (t, o, c) = (target.clone(), old.clone(), current.clone());
+        let restored = tokio::task::spawn_blocking(move || restore_previous(&t, &o, &c, portable)).await?;
+        return Err(match restored {
+            Ok(()) => anyhow::anyhow!("the new version did not start, so the previous version was kept"),
+            Err(e) => {
+                crate::loge!("self-update: rollback failed: {e}");
+                anyhow::anyhow!(
+                    "the new version did not start and the previous version could not be put back ({e}).                      Reinstall AddonForge from the releases page; your addons are not affected."
+                )
+            }
+        });
     }
     Ok(target)
 }
@@ -217,11 +226,26 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
 /// Put the previous copy back after a failed launch. Portable: the old file was
 /// never moved, so only the new file goes. Installed: the old exe was renamed
 /// aside, so it is renamed back over the new one.
-pub(crate) fn restore_previous(target: &Path, old: &Path, current: &Path, portable: bool) {
-    let _ = std::fs::remove_file(target);
+pub(crate) fn restore_previous(target: &Path, old: &Path, current: &Path, portable: bool) -> std::io::Result<()> {
+    // Antivirus and Windows can hold a file open for a moment, so retry before giving up.
+    retry_io(|| if target.exists() { std::fs::remove_file(target) } else { Ok(()) })?;
     if !portable {
-        let _ = std::fs::rename(old, current);
+        retry_io(|| std::fs::rename(old, current))?;
     }
+    Ok(())
+}
+
+/// Run an operation, retrying for a few seconds while a file is briefly locked.
+fn retry_io(mut op: impl FnMut() -> std::io::Result<()>) -> std::io::Result<()> {
+    let mut last = None;
+    for _ in 0..10 {
+        match op() {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    Err(last.unwrap_or_else(|| std::io::Error::other("operation failed")))
 }
 
 /// True once the new copy has written its start marker. False if it exits first,
@@ -351,7 +375,7 @@ mod rollback_tests {
         // The update renamed the old exe aside and wrote the new one at the same path.
         fs::write(&old, "old build").unwrap();
         fs::write(&current, "new build").unwrap();
-        restore_previous(&current, &old, &current, false);
+        restore_previous(&current, &old, &current, false).unwrap();
         assert_eq!(fs::read_to_string(&current).unwrap(), "old build");
         assert!(!old.exists());
     }
@@ -363,7 +387,7 @@ mod rollback_tests {
         let target = dir.join("AddonForge-v0.4.0-b27.exe");
         fs::write(&old, "old build").unwrap();
         fs::write(&target, "new build").unwrap();
-        restore_previous(&target, &old, &old, true);
+        restore_previous(&target, &old, &old, true).unwrap();
         assert!(!target.exists());
         assert_eq!(fs::read_to_string(&old).unwrap(), "old build");
     }
