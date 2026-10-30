@@ -7,7 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashMap};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -79,19 +79,31 @@ impl AppState {
     }
 
     pub fn load() -> Self {
-        // Fall back to the last good copy if the main file is missing or unreadable.
+        Self::load_from(&Self::dir())
+    }
+
+    /// Current settings, else the last good copy, else empty.
+    pub fn load_from(dir: &Path) -> Self {
         let read = |p: PathBuf| -> Option<Self> { serde_json::from_slice(&fs::read(p).ok()?).ok() };
-        read(Self::path()).or_else(|| read(Self::dir().join("state.json.bak"))).unwrap_or_default()
+        read(dir.join("state.json")).or_else(|| read(dir.join("state.json.bak"))).unwrap_or_default()
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
-        let dir = Self::dir();
-        fs::create_dir_all(&dir)?;
+        self.save_to(&Self::dir())
+    }
+
+    /// Write the settings atomically. The last good copy is kept as `state.json.bak`:
+    /// it is only replaced by a current file that still reads back as valid, so a
+    /// corrupt file can never overwrite the only good copy.
+    pub fn save_to(&self, dir: &Path) -> anyhow::Result<()> {
+        fs::create_dir_all(dir)?;
         let tmp = dir.join("state.json.tmp");
         fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
-        let final_path = Self::path();
-        // Keep the previous copy as a recovery file before replacing it.
-        if final_path.exists() {
+        let final_path = dir.join("state.json");
+        let current_is_valid = fs::read(&final_path)
+            .map(|b| serde_json::from_slice::<AppState>(&b).is_ok())
+            .unwrap_or(false);
+        if current_is_valid {
             let _ = fs::copy(&final_path, dir.join("state.json.bak"));
         }
         // Rust's rename replaces an existing file on Windows, so the state file is
@@ -100,3 +112,43 @@ impl AppState {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("af-state-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_corrupt_settings_file_does_not_overwrite_the_good_backup() {
+        let dir = scratch("keep-backup");
+        let mut good = AppState::default();
+        good.allow_prerelease = true;
+        good.save_to(&dir).unwrap();
+        good.save_to(&dir).unwrap(); // the good copy is now also the backup
+        fs::write(dir.join("state.json"), "{ not json").unwrap();
+        // Saving over a corrupt file must leave the good backup in place.
+        AppState::default().save_to(&dir).unwrap();
+        let backup: AppState = serde_json::from_slice(&fs::read(dir.join("state.json.bak")).unwrap()).unwrap();
+        assert!(backup.allow_prerelease);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_falls_back_to_the_backup_when_the_main_file_is_corrupt() {
+        let dir = scratch("fallback");
+        let mut good = AppState::default();
+        good.auto_update = true;
+        good.save_to(&dir).unwrap();
+        good.save_to(&dir).unwrap();
+        fs::write(dir.join("state.json"), "broken").unwrap();
+        assert!(AppState::load_from(&dir).auto_update);
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
+

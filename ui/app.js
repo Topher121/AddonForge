@@ -340,6 +340,7 @@ async function updateOne(p, allowNonForever = false) {
     const i = packages.findIndex((x) => x.key === p.key);
     if (i >= 0) packages[i] = fresh;
     toast(svfixReminder(`${fresh.name} is now ${fresh.installed_version || "installed"}`));
+    return "updated";
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
       p.status = "update";
@@ -347,11 +348,12 @@ async function updateOne(p, allowNonForever = false) {
       setBusy(false);
       const ok = await confirmModal(`<p><b>${esc(p.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">It may still work, or it may error in game. Install it anyway?</p>`, "Install anyway");
       if (ok) return updateOne(p, true);
-      return;
+      return "skipped";
     }
     p.status = "error";
     p.note = explainError(err);
     toast(explainError(err), true);
+    return "failed";
   } finally {
     setBusy(false);
     renderInstalled();
@@ -414,8 +416,12 @@ async function checkUpdates() {
 async function updateAll() {
   const todo = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored);
   if (!todo.length) return;
-  for (const p of todo) await updateOne(p);
-  toast(`Updated ${todo.length} addon${todo.length === 1 ? "" : "s"}`);
+  const counts = { updated: 0, failed: 0, skipped: 0 };
+  for (const p of todo) counts[(await updateOne(p)) || "failed"] += 1;
+  const parts = [`${counts.updated} updated`];
+  if (counts.failed) parts.push(`${counts.failed} failed`);
+  if (counts.skipped) parts.push(`${counts.skipped} skipped`);
+  toast(parts.join(", "), counts.failed > 0);
 }
 
 // The beta folder is still the managed one and the live client has appeared beside it.
@@ -1160,4 +1166,6 @@ $("selfupdate-go").onclick = async () => {
         .finally(() => $("modal-no").classList.remove("hidden"));
     })
     .catch(() => {});
+  // The interface is up. Only now does a freshly updated copy count as started.
+  invoke("app_ready").catch(() => {});
 })();

@@ -11,11 +11,27 @@ pub struct Summary {
     pub bytes: u64,
 }
 
+/// Write the archive to a temporary file and move it into place only when it is
+/// complete. A failed backup never replaces an existing good archive.
 pub fn zip_dir(src: &Path, dest: &Path) -> anyhow::Result<Summary> {
     anyhow::ensure!(src.is_dir(), "{} is not a folder", src.display());
     if let Some(parent) = dest.parent() {
         fs::create_dir_all(parent)?;
     }
+    let part = dest.with_extension("zip.part");
+    match write_zip(src, &part) {
+        Ok(summary) => {
+            fs::rename(&part, dest)?;
+            Ok(summary)
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&part);
+            Err(e)
+        }
+    }
+}
+
+fn write_zip(src: &Path, dest: &Path) -> anyhow::Result<Summary> {
     let file = fs::File::create(dest)?;
     let mut zip = zip::ZipWriter::new(file);
     let opts = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
@@ -50,6 +66,24 @@ pub fn zip_dir(src: &Path, dest: &Path) -> anyhow::Result<Summary> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_failed_backup_keeps_the_previous_archive() {
+        let tmp = std::env::temp_dir().join(format!("af-backup-keep-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let src = tmp.join("WTF");
+        fs::create_dir_all(&src).unwrap();
+        fs::write(src.join("Config.wtf"), "SET x 1").unwrap();
+        let dest = tmp.join("WTF-good.zip");
+        zip_dir(&src, &dest).unwrap();
+        let good = fs::read(&dest).unwrap();
+        // The source is not a folder any more, so the new backup must fail and leave the old one alone.
+        fs::remove_dir_all(&src).unwrap();
+        assert!(zip_dir(&src, &dest).is_err());
+        assert_eq!(fs::read(&dest).unwrap(), good);
+        assert!(!dest.with_extension("zip.part").exists());
+        let _ = fs::remove_dir_all(&tmp);
+    }
 
     #[test]
     fn zips_nested_files_and_skips_links() {
