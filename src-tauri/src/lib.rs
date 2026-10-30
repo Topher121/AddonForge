@@ -1797,6 +1797,10 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app)
+        .setup(|_app| {
+            selfupdate::confirm_started();
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             get_settings,
             find_installs,
@@ -1836,8 +1840,8 @@ pub fn run() {
         .expect("error while running AddonForge");
 }
 
-pub fn finish_replace(old: &Path) {
-    selfupdate::finish_replace(old);
+pub fn note_replace(old: std::path::PathBuf, marker: Option<std::path::PathBuf>) {
+    selfupdate::note_replace(old, marker);
 }
 
 #[cfg(test)]

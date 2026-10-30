@@ -39,11 +39,31 @@ fn unique() -> String {
     format!("{n:x}")
 }
 
+/// Exclusive lock on the addons folder's temp area, shared by every copy of the
+/// app. The OS drops it if the process dies, so it cannot go stale. `wait` false
+/// returns None when another copy holds it.
+fn lock_tmp(addons_dir: &Path, wait: bool) -> Option<fs::File> {
+    let dir = addons_dir.join(TMP_DIR);
+    fs::create_dir_all(&dir).ok()?;
+    let file = fs::OpenOptions::new().create(true).write(true).truncate(false).open(dir.join("lock")).ok()?;
+    if wait {
+        file.lock().ok()?;
+    } else if file.try_lock().is_err() {
+        return None;
+    }
+    Some(file)
+}
+
 /// Run at startup. An install interrupted by a crash leaves the folders it
 /// replaced in `<tmp>/<id>/old`. Put back each one whose place is now empty;
 /// any other backup is moved to `<tmp>/recovered` so nothing is deleted. A work
 /// folder is only removed once all its backups have been moved out.
 pub fn clean_tmp(addons_dir: &Path) {
+    // Another copy of the app may be mid-install; its folders are not abandoned.
+    let Some(_guard) = lock_tmp(addons_dir, false) else {
+        crate::logi!("another AddonForge is installing; skipping recovery");
+        return;
+    };
     let tmp = addons_dir.join(TMP_DIR);
     let Ok(entries) = fs::read_dir(&tmp) else { return };
     let recovered = tmp.join("recovered");
@@ -311,6 +331,9 @@ pub fn place(
     protected_folders: &HashMap<String, String>,
 ) -> anyhow::Result<Vec<String>> {
     fs::create_dir_all(addons_dir)?;
+    // Held until this install has finished or rolled back, so no other copy of
+    // the app can recover or remove its folders in the meantime.
+    let _guard = lock_tmp(addons_dir, true).ok_or_else(|| anyhow!("could not lock the addons folder"))?;
     let work = addons_dir.join(TMP_DIR).join(unique());
     let extract_dir = work.join("x");
     let backup_dir = work.join("old");
@@ -681,5 +704,18 @@ mod recovery_tests {
         fs::create_dir_all(&out).unwrap();
         assert!(extract_limited(&mut archive, &out).is_err());
         assert!(!dir.join("escape.txt").exists());
+    }
+
+    #[test]
+    fn recovery_waits_while_another_copy_holds_the_lock() {
+        let addons = scratch("lock");
+        let old = addons.join(TMP_DIR).join("work3").join("old").join("Atlas");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("Atlas.lua"), "mid install").unwrap();
+        let _held = lock_tmp(&addons, true).unwrap();
+        clean_tmp(&addons);
+        // Nothing was moved: the other copy is still installing.
+        assert!(old.join("Atlas.lua").exists());
+        assert!(!addons.join("Atlas").exists());
     }
 }
