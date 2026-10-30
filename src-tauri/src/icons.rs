@@ -389,7 +389,12 @@ pub fn release_notes(md: &str) -> String {
         out.push_str(t.trim_end());
         out.push('\n');
         if out.len() > 1200 {
-            out.truncate(1200);
+            // Cut on a character boundary: a byte index inside a multi-byte character panics.
+            let mut end = 1200;
+            while !out.is_char_boundary(end) {
+                end -= 1;
+            }
+            out.truncate(end);
             out.push_str("\u{2026}");
             break;
         }
@@ -582,6 +587,14 @@ mod tests {
         assert!(e.contains("\u{2022} one"));
         assert!(!e.contains("code"));
     }
+
+    #[test]
+    fn release_notes_cut_on_a_character_boundary() {
+        // 1199 ASCII bytes, then a two-byte character straddling the 1200-byte cut.
+        let md = format!("{}\u{e9}tail", "a".repeat(1199));
+        let notes = release_notes(&md);
+        assert!(notes.ends_with('\u{2026}'));
+    }
 }
 
 /// Read a response body, stopping as soon as it passes `limit` bytes, so a
@@ -595,4 +608,6 @@ pub(crate) async fn read_capped(mut resp: reqwest::Response, limit: usize) -> an
         out.extend_from_slice(&chunk);
     }
     Ok(out)
+
 }
+
