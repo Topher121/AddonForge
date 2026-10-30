@@ -862,15 +862,6 @@ async fn install_from(
     if not_forever && !allow_non_forever && vouched != Some(true) {
         return Err("NOT_FOREVER".into());
     }
-    let protected = if entry.map(|e| e.group_required_dependencies).unwrap_or(false) {
-        let scan_path = install.clone();
-        let folders = tokio::task::spawn_blocking(move || wow::scan_addons(Path::new(&scan_path)))
-            .await.map_err(err)?;
-        let packages = build_packages(&st, &cat, &folders);
-        protected_package_folders(&st, &packages, key)
-    } else {
-        protected_package_folders(&st, &[], key)
-    };
     logi!("install {key} from {} {} -> {}", src.label(), remote.version, remote.download_url);
     // Staged outside the addons folder: the install lock and recovery never touch it.
     let tmp = state::AppState::dir().join("downloads");
@@ -880,8 +871,28 @@ async fn install_from(
             loge!("download {key}: {e}");
             e.to_string()
         })?;
+    // From here to the saved state, the addons lock is held and the owners are read
+    // from disk, so another copy of the app cannot change them in between.
+    let lock = {
+        let addons = addons.clone();
+        tokio::task::spawn_blocking(move || install::lock_addons(&addons))
+            .await
+            .map_err(err)?
+            .map_err(err)?
+    };
+    let mut fresh = state::AppState::load();
+    let protected = if entry.map(|e| e.group_required_dependencies).unwrap_or(false) {
+        let scan_path = install.clone();
+        let folders = tokio::task::spawn_blocking(move || wow::scan_addons(Path::new(&scan_path)))
+            .await
+            .map_err(err)?;
+        let packages = build_packages(&fresh, &cat, &folders);
+        protected_package_folders(&fresh, &packages, key)
+    } else {
+        protected_package_folders(&fresh, &[], key)
+    };
     let addons2 = addons.clone();
-    let folders = tokio::task::spawn_blocking(move || install::place(&zip, &addons2, &protected))
+    let folders = tokio::task::spawn_blocking(move || install::place_locked(&zip, &addons2, &protected))
         .await
         .map_err(err)?
         .map_err(|e| {
@@ -895,9 +906,10 @@ async fn install_from(
         folders,
         installed_at: state::now_secs(),
     };
-    let mut st = app.state.lock().await;
-    record_install(&mut st, key, &rec);
-    st.save().map_err(err)?;
+    record_install(&mut fresh, key, &rec);
+    fresh.save().map_err(err)?;
+    *app.state.lock().await = fresh;
+    drop(lock);
     logi!("installed {key} {} ({} folders)", rec.version, rec.folders.len());
     Ok(rec)
 }
@@ -1277,15 +1289,26 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
         .find(|p| p.key == key)
         .ok_or_else(|| "Addon not found".to_string())?;
     let addons = addons_dir(&install);
-    let gone = tokio::task::spawn_blocking(move || install::remove_folders(&addons, &pkg.folders))
+    // Read the owners from disk under the same lock as installs, so a removal
+    // cannot race an install from another copy of the app.
+    let lock = {
+        let a = addons.clone();
+        tokio::task::spawn_blocking(move || install::lock_addons(&a))
+            .await
+            .map_err(err)?
+            .map_err(err)?
+    };
+    let gone = tokio::task::spawn_blocking(move || install::remove_folders_locked(&addons, &pkg.folders))
         .await
         .map_err(err)?
         .map_err(err)?;
-    let mut st = app.state.lock().await;
-    st.installed.remove(&key);
-    st.pinned.remove(&key);
-    st.ignored.remove(&key);
-    st.save().map_err(err)?;
+    let mut fresh = state::AppState::load();
+    fresh.installed.remove(&key);
+    fresh.pinned.remove(&key);
+    fresh.ignored.remove(&key);
+    fresh.save().map_err(err)?;
+    *app.state.lock().await = fresh;
+    drop(lock);
     logi!("removed {key}: {:?}", gone);
     Ok(gone)
 }
@@ -1756,12 +1779,16 @@ pub fn cli(args: &[String]) -> i32 {
                 let key = args.get(1).ok_or("usage: remove <package key>")?;
                 let install = current_install(&app).await?;
                 let pkg = scan_packages(&app).await?.into_iter().find(|p| &p.key == key).ok_or("no such package")?;
-                let gone = install::remove_folders(&addons_dir(&install), &pkg.folders).map_err(err)?;
-                let mut st = app.state.lock().await;
-                st.installed.remove(key);
-                st.pinned.remove(key);
-                st.ignored.remove(key);
-                st.save().map_err(err)?;
+                let dir = addons_dir(&install);
+                let lock = install::lock_addons(&dir).map_err(err)?;
+                let gone = install::remove_folders_locked(&dir, &pkg.folders).map_err(err)?;
+                let mut fresh = state::AppState::load();
+                fresh.installed.remove(key);
+                fresh.pinned.remove(key);
+                fresh.ignored.remove(key);
+                fresh.save().map_err(err)?;
+                *app.state.lock().await = fresh;
+                drop(lock);
                 Ok(serde_json::json!({ "removed": gone }))
             }
             "prerelease" => {
