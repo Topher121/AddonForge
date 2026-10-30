@@ -88,6 +88,29 @@ the exe.
 
 Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and a pull request, validated automatically. Or open an "Add an addon" issue and we'll do it.
 
+## Code signing policy
+
+Code signing: applied for with SignPath Foundation (free for open source). Until it is approved, the Windows files are not signed, as described in the download notes above. Once approved, releases will be signed with a certificate issued by SignPath Foundation.
+
+**Roles**
+- Authors, reviewers and approvers: [Topher121](https://github.com/Topher121) (sole maintainer).
+- Every signing request is approved by the maintainer before release.
+- Changes from outside contributors are reviewed by the maintainer before they are merged.
+
+**Privacy**
+AddonForge does not collect or send personal data and has no telemetry, accounts or analytics. It contacts only these hosts, and only to check versions, read addon details and download addons:
+
+- github.com, api.github.com, raw.githubusercontent.com and GitHub's release download hosts: the addon catalogue, AddonForge's own updates, and GitHub-hosted addons (addon details, README images and author avatars).
+- api.curseforge.com and edge.forgecdn.net: CurseForge addon lookups and downloads (only for addons whose authors allow third-party downloads).
+- api.mmoui.com: WoWInterface addon lookups and the download hosts it returns.
+- api.tukui.org: TukUI addon lookups and the download hosts it returns.
+- addons.wago.io: only for addons first installed from Wago before build 25.
+
+These requests reveal your IP address and the addon names or IDs being checked, as with any web request. The CurseForge API key is sent only to api.curseforge.com.
+
+**Scope of signing**
+Only AddonForge's own release builds are signed, and only from source in this repository. Addons installed through AddonForge are made by their own authors and are not signed by this project.
+
 ## Support
 
 Bugs and ideas: use **Report a problem** in the app's Settings tab (it fills in the diagnostics), open an issue, or email PocketForgeStudios@proton.me.
