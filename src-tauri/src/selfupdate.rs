@@ -98,7 +98,7 @@ pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> Self
     };
     // The manifest is trusted only with a valid signature from the release key.
     let res: anyhow::Result<Latest> = async {
-        let manifest = client.get(url).send().await?.error_for_status()?.bytes().await?;
+        let manifest = crate::icons::read_capped(client.get(url).send().await?.error_for_status()?, 1024 * 1024).await?;
         let sig = client.get(format!("{url}.sig")).send().await?.error_for_status()?.text().await?;
         let key = crate::signing::verified_key()?;
         crate::signing::verify_manifest(&manifest, &sig, &key)?;
@@ -151,7 +151,7 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         anyhow::bail!("update has the same filename as the running exe");
     }
     let tmp = dir.join(format!("{name}.part"));
-    let bytes = client.get(&latest.url).send().await?.error_for_status()?.bytes().await?;
+    let bytes = crate::icons::read_capped(client.get(&latest.url).send().await?.error_for_status()?, 200 * 1024 * 1024).await?;
     if bytes.len() < 1_000_000 {
         anyhow::bail!("downloaded file is too small to be AddonForge ({} bytes)", bytes.len());
     }
