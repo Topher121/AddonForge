@@ -185,9 +185,32 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
     Ok(target)
 }
 
+/// Only the old AddonForge exe (`AddonForge*.exe` or `AddonForge*.exe.old`)
+/// sitting in the app's own folder may be removed. The argument comes from the
+/// command line, so it is never trusted as a path to delete.
+fn is_update_leftover(old: &Path, app_dir: &Path) -> bool {
+    if old.parent().map(|p| p.to_string_lossy().to_ascii_lowercase())
+        != Some(app_dir.to_string_lossy().to_ascii_lowercase())
+    {
+        return false;
+    }
+    let Some(name) = old.file_name().and_then(|n| n.to_str()) else { return false };
+    let lower = name.to_ascii_lowercase();
+    lower.starts_with("addonforge") && (lower.ends_with(".exe") || lower.ends_with(".exe.old"))
+}
+
 /// Called on startup when launched as `--replaced <old exe>`: delete the
 /// old file once the old process has let go of it.
 pub fn finish_replace(old: &Path) {
+    let dir = std::env::current_exe().ok().and_then(|me| me.parent().map(Path::to_path_buf));
+    let Some(dir) = dir else {
+        crate::loge!("self-update: refusing to clean up {}: no app folder", old.display());
+        return;
+    };
+    if !is_update_leftover(old, &dir) {
+        crate::loge!("self-update: refusing to delete {}: not an AddonForge file in the app folder", old.display());
+        return;
+    }
     for _ in 0..20 {
         if !old.exists() || std::fs::remove_file(old).is_ok() {
             crate::logi!("self-update: removed old exe {}", old.display());
@@ -208,5 +231,24 @@ mod tests {
         assert!(!is_newer(&same));
         let next = Latest { version: "999.0.0".into(), ..Default::default() };
         assert!(is_newer(&next));
+    }
+}
+
+#[cfg(test)]
+mod leftover_tests {
+    use super::is_update_leftover;
+    use std::path::Path;
+
+    #[test]
+    fn only_our_old_exes_in_the_app_folder_are_removable() {
+        let dir = Path::new("C:/Apps/AddonForge");
+        assert!(is_update_leftover(Path::new("C:/Apps/AddonForge/AddonForge-v0.4.0-b23.exe"), dir));
+        assert!(is_update_leftover(Path::new("C:/Apps/AddonForge/addonforge.exe.old"), dir));
+        // Wrong folder, wrong name, or not an exe: refused.
+        assert!(!is_update_leftover(Path::new("C:/Users/someone/Documents/AddonForge.exe"), dir));
+        assert!(!is_update_leftover(Path::new("C:/Apps/AddonForge/state.json"), dir));
+        assert!(!is_update_leftover(Path::new("C:/Apps/AddonForge/WTF/Account.lua"), dir));
+        assert!(!is_update_leftover(Path::new("C:/Apps/AddonForge/notes.exe"), dir));
+        assert!(!is_update_leftover(Path::new("C:/Apps/AddonForge/sub/AddonForge.exe"), dir));
     }
 }
