@@ -6,8 +6,7 @@ use std::path::Path;
 /// read from `private/curseforge-key.txt` (gitignored) or the
 /// `ADDONFORGE_CURSEFORGE_KEY` environment variable at compile time and written
 /// as a plain string constant, never anywhere else. Builds without it (CI,
-/// contributors) simply have CurseForge turned off. See CLAUDE.md "CurseForge
-/// API" for the permission record.
+/// contributors) simply have CurseForge turned off. See the maintainer's permission record.
 fn curseforge_key() -> Option<String> {
     println!("cargo:rerun-if-env-changed=ADDONFORGE_CURSEFORGE_KEY");
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("private").join("curseforge-key.txt");

@@ -8,7 +8,7 @@
 #   .\build.ps1 -DeliverOnly -Release # no bump/build: publish the newest build\*.exe as it is
 #
 # Output: build\AddonForge-v<ver>-b<build>.exe (old builds archived, keep 5)
-# Distribution: GitHub Releases only (the owner 2026-09-22: not on the PhoneApps page, it is a Windows tool).
+# Distribution: GitHub Releases only (a Windows tool, not a web app).
 # Users get new builds through the app's own self-update banner (reads latest.json from the latest release).
 param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly, [switch]$Release, [string]$ConfirmTag = "")
 $ErrorActionPreference = "Stop"
@@ -58,7 +58,7 @@ if ($DeliverOnly) {
 } else {
 Push-Location $tauri
 try {
-    # Security gate (studio rule, maintainer 2026-10-01): refuses to build if any protection is weakened.
+    # Security gate (studio rule): refuses to build if any protection is weakened.
     node (Join-Path $root "scripts\security-check.mjs")
     if ($LASTEXITCODE -ne 0) { throw "SECURITY CHECK FAILED - not building. Fix the config; never weaken a protection to get a build out." }
     if (-not $SkipTests) {
