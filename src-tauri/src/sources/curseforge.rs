@@ -26,10 +26,10 @@ const CACHE_TTL: Duration = Duration::from_secs(15 * 60);
 
 /// The key, if this build has one.
 pub fn key() -> Option<String> {
-    if CF_KEY_MASKED.is_empty() {
+    if CF_KEY.is_empty() {
         return None;
     }
-    String::from_utf8(CF_KEY_MASKED.iter().map(|b| b ^ CF_KEY_MASK).collect()).ok()
+    Some(CF_KEY.to_string())
 }
 
 pub fn available() -> bool {
