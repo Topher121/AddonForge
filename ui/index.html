@@ -69,6 +69,7 @@
       <label class="lbl" for="browse-sort">Sort</label>
       <select id="browse-sort" aria-label="Sort catalogue">
         <option value="name">Name</option>
+        <option value="category">Category</option>
         <option value="downloads">Most downloaded</option>
         <option value="updated">Recently updated</option>
       </select>
@@ -80,8 +81,11 @@
       <span>Install <b id="gh-offer-repo"></b> from GitHub. Any repo that publishes releases works, listed here or not.</span>
       <button id="btn-gh-install" class="btn">Install</button>
     </div>
-    <div class="thead cols-browse" aria-hidden="true">
-      <span>Addon</span><span>Category</span><span>Downloads</span><span>Source</span><span></span>
+    <div class="thead cols-browse">
+      <button type="button" class="sort-head" data-sort="name">Addon</button>
+      <button type="button" class="sort-head" data-sort="category">Category</button>
+      <button type="button" class="sort-head" data-sort="downloads">Downloads</button>
+      <span>Source</span><span></span>
     </div>
     <div id="browse-list" class="list"></div>
     <div id="curse-results" class="hidden">

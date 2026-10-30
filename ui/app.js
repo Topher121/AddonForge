@@ -458,8 +458,18 @@ function sortedCatalog(rows) {
   const name = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   if (by === "downloads") return rows.sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || name(a, b));
   if (by === "updated") return rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || name(a, b));
+  if (by === "category") return rows.sort((a, b) => String(a.category || "").localeCompare(String(b.category || ""), undefined, { sensitivity: "base" }) || name(a, b));
   return rows.sort(name);
 }
+
+// Clicking a column heading sorts by it, through the same Sort control.
+document.querySelectorAll(".sort-head").forEach((head) => {
+  head.onclick = () => {
+    $("browse-sort").value = head.dataset.sort;
+    renderCatalog();
+    document.querySelectorAll(".sort-head").forEach((h) => h.classList.toggle("active", h === head));
+  };
+});
 
 // Every place this entry can be installed from, best first. The row shows a
 // picker when there is more than one so the user chooses where it comes from.
@@ -642,7 +652,9 @@ const curse = { key: "", query: "", rows: [], total: 0, loaded: 0, loading: fals
 function curseParams() {
   const q = $("browse-filter").value.trim();
   const type = typeFor($("browse-cat").value);
-  return { query: q, sort: $("browse-sort").value || "downloads", category: type ? type.curse : null, key: `${q}|${$("browse-sort").value}|${type ? type.id : ""}` };
+  // CurseForge has no category order, so a category sort uses name order there.
+  const by = $("browse-sort").value === "category" ? "name" : $("browse-sort").value || "downloads";
+  return { query: q, sort: by, category: type ? type.curse : null, key: `${q}|${by}|${type ? type.id : ""}` };
 }
 
 function renderCurseRows() {
