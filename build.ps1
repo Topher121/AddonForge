@@ -122,11 +122,25 @@ $latest = [ordered]@{
     filename = $name
     url      = "https://github.com/Topher121/AddonForge/releases/download/$tag/$name"
     size     = (Get-Item $out).Length
+    sha256   = (Get-FileHash $out -Algorithm SHA256).Hash.ToLower()
     notes    = $whatsNew
     history  = @($history)
 }
 $latestPath = Join-Path $root "build\latest.json"
 WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json -Depth 4)
+
+# Sign the manifest with the offline release key (kept outside the repo; see
+# scripts/sign-release.js). A release without a signature would leave every
+# updated install refusing updates, so -Release stops without one.
+$sigPath = "$latestPath.sig"
+if ($env:ADDONFORGE_RELEASE_KEY) {
+    & node (Join-Path $root "scripts\sign-release.js") $latestPath
+    if ($LASTEXITCODE -ne 0) { throw "signing latest.json failed" }
+    & node (Join-Path $root "scripts\sign-release.js") --verify $latestPath
+    if ($LASTEXITCODE -ne 0) { throw "signature check failed after signing" }
+} elseif ($Release) {
+    throw "Not publishing: set ADDONFORGE_RELEASE_KEY to the release key path so latest.json is signed."
+}
 
 # ---- Defender gate: never publish a file Defender flags -------------------
 # Scans the exact exe (and installer) about to be released. Read-only with
@@ -163,7 +177,7 @@ if ($Release -and $ConfirmTag -ne $tag) {
 if ($Release) {
     Push-Location $root
     try {
-        $assets = @($out, $latestPath)
+        $assets = @($out, $latestPath, $sigPath)
         $setupPath = Join-Path $root "build\$setupName"
         if ($setupName -and (Test-Path $setupPath)) { $assets += $setupPath }
         gh release create $tag @assets --title "AddonForge $tag" --notes "$whatsNew"

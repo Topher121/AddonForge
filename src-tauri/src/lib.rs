@@ -6,6 +6,7 @@ mod icons;
 mod install;
 pub mod log;
 mod selfupdate;
+mod signing;
 mod sources;
 mod state;
 mod wow;

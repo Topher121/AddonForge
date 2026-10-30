@@ -45,6 +45,10 @@ pub struct Latest {
     pub notes: String,
     #[serde(default)]
     pub size: u64,
+    /// SHA-256 (hex) of the exe at `url`. Required: apply() refuses a download
+    /// that does not match it.
+    #[serde(default)]
+    pub sha256: String,
     /// Recent builds' notes, newest first, so a user who skipped builds
     /// still reads what changed in each of them.
     #[serde(default)]
@@ -92,9 +96,13 @@ pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> Self
         tag: String::new(),
         error: None,
     };
-    let res = async {
-        let r = client.get(url).send().await?.error_for_status()?;
-        r.json::<Latest>().await
+    // The manifest is trusted only with a valid signature from the release key.
+    let res: anyhow::Result<Latest> = async {
+        let manifest = client.get(url).send().await?.error_for_status()?.bytes().await?;
+        let sig = client.get(format!("{url}.sig")).send().await?.error_for_status()?.text().await?;
+        let key = crate::signing::verified_key()?;
+        crate::signing::verify_manifest(&manifest, &sig, &key)?;
+        Ok(serde_json::from_slice(&manifest)?)
     }
     .await;
     match res {
@@ -147,6 +155,7 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
     if bytes.len() < 1_000_000 {
         anyhow::bail!("downloaded file is too small to be AddonForge ({} bytes)", bytes.len());
     }
+    crate::signing::check_sha256(&bytes, &latest.sha256)?;
     if latest.size > 0 && bytes.len() as u64 != latest.size {
         anyhow::bail!("downloaded size {} does not match the release's {}", bytes.len(), latest.size);
     }

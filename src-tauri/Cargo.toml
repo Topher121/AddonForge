@@ -27,6 +27,8 @@ anyhow = "1"
 image = { version = "0.25", default-features = false, features = ["png", "tga", "jpeg", "gif"] }
 image-blp = "1"
 base64 = "0.22"
+ed25519-dalek = { version = "2", default-features = false, features = ["std"] }
+sha2 = "0.10"
 
 [profile.release]
 opt-level = "s"
