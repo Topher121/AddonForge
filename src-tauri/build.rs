@@ -4,10 +4,10 @@ use std::path::Path;
 
 /// The CurseForge 3rd Party API key is baked into release builds only. It is
 /// read from `private/curseforge-key.txt` (gitignored) or the
-/// `ADDONFORGE_CURSEFORGE_KEY` environment variable at compile time, lightly
-/// masked so it does not sit in the exe as a plain string, and never written
-/// anywhere else. Builds without it (CI, contributors) simply have CurseForge
-/// turned off. See CLAUDE.md "CurseForge API" for the permission record.
+/// `ADDONFORGE_CURSEFORGE_KEY` environment variable at compile time and written
+/// as a plain string constant, never anywhere else. Builds without it (CI,
+/// contributors) simply have CurseForge turned off. See CLAUDE.md "CurseForge
+/// API" for the permission record.
 fn curseforge_key() -> Option<String> {
     println!("cargo:rerun-if-env-changed=ADDONFORGE_CURSEFORGE_KEY");
     let file = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("private").join("curseforge-key.txt");

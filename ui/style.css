@@ -311,3 +311,8 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .detail-body .notes-title { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
 .detail-body .notes pre { margin: 0; color: var(--muted); font: inherit; font-size: 12px; line-height: 1.5; white-space: pre-wrap; max-height: 150px; overflow: auto; padding-right: 6px; }
 .detail-body .notes.first { margin: 0 0 10px; }
+
+/* Clickable column headings on Find addons: look like the plain labels. */
+.thead .sort-head { all: unset; cursor: pointer; font: inherit; color: inherit; }
+.thead .sort-head:hover, .thead .sort-head:focus-visible { color: var(--accent, #e8a24a); text-decoration: underline; }
+.thead .sort-head.active { color: var(--accent, #e8a24a); }
