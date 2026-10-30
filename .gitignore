@@ -7,3 +7,7 @@ dist/
 .DS_Store
 Thumbs.db
 private/
+
+# AI working notes: private to this PC, never published
+CLAUDE.md
+.claude/
