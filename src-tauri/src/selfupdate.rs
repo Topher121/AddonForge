@@ -13,6 +13,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[cfg(windows)]
+use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(windows)]
 use std::path::PathBuf;
 
 pub const LATEST_URL: &str =
@@ -99,7 +101,8 @@ pub async fn check(client: &reqwest::Client, url_override: Option<&str>) -> Self
     // The manifest is trusted only with a valid signature from the release key.
     let res: anyhow::Result<Latest> = async {
         let manifest = crate::icons::read_capped(client.get(url).send().await?.error_for_status()?, 1024 * 1024).await?;
-        let sig = client.get(format!("{url}.sig")).send().await?.error_for_status()?.text().await?;
+        let sig_resp = client.get(format!("{url}.sig")).send().await?.error_for_status()?;
+        let sig = String::from_utf8(crate::icons::read_capped(sig_resp, 4096).await?)?;
         let key = crate::signing::verified_key()?;
         crate::signing::verify_manifest(&manifest, &sig, &key)?;
         Ok(serde_json::from_slice(&manifest)?)
@@ -187,11 +190,63 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         bytes.len(),
         if portable { "portable" } else { "in place" }
     );
-    std::process::Command::new(&target)
+    // The new copy writes this marker once its window is up. Only then is the old
+    // copy removed; until then the old copy is the fallback.
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let marker = dir.join(format!("AddonForge-started-{nanos:x}.flag"));
+    let child = std::process::Command::new(&target)
         .arg("--replaced")
         .arg(&old)
+        .arg(&marker)
         .spawn()?;
+    let started = tokio::task::spawn_blocking(move || wait_for_start(child, &marker)).await?;
+    if !started {
+        // Put the working copy back. Installed: the old exe is renamed back into place.
+        let _ = std::fs::remove_file(&target);
+        if !portable {
+            let _ = std::fs::rename(&old, &current);
+        }
+        anyhow::bail!("the new version did not start, so the previous version was kept");
+    }
     Ok(target)
+}
+
+/// True once the new copy has written its start marker. False if it exits first,
+/// or does not start within 20 seconds (it is then stopped).
+#[cfg(windows)]
+fn wait_for_start(mut child: std::process::Child, marker: &Path) -> bool {
+    for _ in 0..40 {
+        if marker.exists() {
+            let _ = std::fs::remove_file(marker);
+            return true;
+        }
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    false
+}
+
+/// Set by main when launched as `--replaced <old exe> [start marker]`.
+static PENDING_REPLACE: std::sync::OnceLock<(PathBuf, Option<PathBuf>)> = std::sync::OnceLock::new();
+
+pub fn note_replace(old: PathBuf, marker: Option<PathBuf>) {
+    let _ = PENDING_REPLACE.set((old, marker));
+}
+
+/// Called once the window is up: this copy has really started, so it tells the
+/// old copy and removes the old exe.
+pub fn confirm_started() {
+    if let Some((old, marker)) = PENDING_REPLACE.get() {
+        if let Some(marker) = marker {
+            let _ = std::fs::write(marker, version());
+        }
+        let old = old.clone();
+        std::thread::spawn(move || finish_replace(&old));
+    }
 }
 
 /// Only the old AddonForge exe (`AddonForge*.exe` or `AddonForge*.exe.old`)
