@@ -10,7 +10,7 @@
 # Output: build\AddonForge-v<ver>-b<build>.exe (old builds archived, keep 5)
 # Distribution: GitHub Releases only (the owner 2026-09-22: not on the PhoneApps page, it is a Windows tool).
 # Users get new builds through the app's own self-update banner (reads latest.json from the latest release).
-param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly, [switch]$Release)
+param([string]$SetVersion = "", [string]$Note = "", [switch]$SkipTests, [switch]$DeliverOnly, [switch]$Release, [string]$ConfirmTag = "")
 $ErrorActionPreference = "Stop"
 $root  = $PSScriptRoot
 $tauri = Join-Path $root "src-tauri"
@@ -140,7 +140,11 @@ foreach ($f in $gateFiles) {
     catch { throw "Defender scan could not run on $f ($($_.Exception.Message)). Not publishing." }
 }
 Start-Sleep -Seconds 3
-$gateHits = @(Get-MpThreatDetection | Where-Object { $_.InitialDetectionTime -ge $gateStart } | Where-Object {
+# No time filter: a repeat detection of a known threat keeps its original
+# InitialDetectionTime, so any detection that names these files blocks the
+# release. Fails closed; the file names carry the version, so old history
+# cannot block a new build by accident.
+$gateHits = @(Get-MpThreatDetection | Where-Object {
     $r = $_.Resources -join " "
     $gateFiles | Where-Object { $r -like "*$(Split-Path $_ -Leaf)*" }
 })
@@ -150,6 +154,12 @@ if ($gateHits.Count -gt 0) {
 }
 Write-Host "Defender gate: clean ($($gateFiles.Count) file(s))" -ForegroundColor Green
 
+# Sign-off: publishing needs the maintainer to type the exact tag. Testing on the
+# exact file and the Defender gate are required first, and this check does not
+# replace them. Usage: build.ps1 -Release -ConfirmTag <tag>
+if ($Release -and $ConfirmTag -ne $tag) {
+    throw "Not publishing $($tag): pass -ConfirmTag $($tag) once the exact file has been tried and the maintainer has signed off."
+}
 if ($Release) {
     Push-Location $root
     try {
