@@ -435,6 +435,7 @@ pub fn place_locked(
 }
 
 /// Delete the given addon folders (used by "Remove").
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
     // Same lock as installs, so a removal cannot race an install in another copy.
     let _guard = lock_addons(addons_dir)?;

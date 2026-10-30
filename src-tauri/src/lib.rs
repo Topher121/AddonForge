@@ -643,15 +643,32 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
     })
 }
 
+/// Every saved setting change goes through here: take the settings lock, reload
+/// the file from disk, apply the change, save, then refresh this copy's view.
+/// A second copy of the app cannot overwrite a change made in between.
+async fn change_settings<R>(app: &App, change: impl FnOnce(&mut AppState) -> R) -> Result<R, String> {
+    let lock = tokio::task::spawn_blocking(AppState::lock_settings).await.map_err(err)?.map_err(err)?;
+    let mut fresh = AppState::load();
+    let out = change(&mut fresh);
+    fresh.save().map_err(err)?;
+    *app.state.lock().await = fresh;
+    drop(lock);
+    Ok(out)
+}
+
 #[tauri::command]
 async fn find_installs(app: State<'_, Shared>) -> Result<Vec<WowInstall>, String> {
     let found = tokio::task::spawn_blocking(wow::find_installs).await.map_err(err)?;
-    let mut st = app.state.lock().await;
-    if st.install_path.is_none() {
+    if app.state.lock().await.install_path.is_none() {
         if let Some(f) = preferred_forever(&found) {
-            st.install_path = Some(f.path.clone());
-            st.save().map_err(err)?;
-            logi!("auto-selected install {}", f.path);
+            let path = f.path.clone();
+            change_settings(&app, |st| {
+                if st.install_path.is_none() {
+                    st.install_path = Some(path.clone());
+                }
+            })
+            .await?;
+            logi!("auto-selected install {}", path);
         }
     }
     Ok(found)
@@ -690,9 +707,7 @@ async fn live_folder_hint(app: State<'_, Shared>) -> Result<Option<String>, Stri
 
 #[tauri::command]
 async fn dismiss_live_hint(app: State<'_, Shared>, path: String) -> Result<(), String> {
-    let mut st = app.state.lock().await;
-    st.dismissed_live_hint = Some(path);
-    st.save().map_err(err)
+    change_settings(&app, |st| st.dismissed_live_hint = Some(path)).await
 }
 
 #[derive(Serialize)]
@@ -762,47 +777,49 @@ async fn set_install_path(app: State<'_, Shared>, path: String) -> Result<WowIns
     let p = PathBuf::from(path.trim());
     let info = wow::describe_install(&p)
         .ok_or_else(|| "That folder doesn't look like a WoW product folder (expected e.g. _forever_ or _classic_beta_ with Interface/AddOns inside)".to_string())?;
-    let mut st = app.state.lock().await;
-    st.install_path = Some(info.path.clone());
-    st.save().map_err(err)?;
+    let path = info.path.clone();
+    change_settings(&app, |st| st.install_path = Some(path)).await?;
     logi!("install set to {}", info.path);
     Ok(info)
 }
 
 #[tauri::command]
 async fn set_prefs(app: State<'_, Shared>, allow_prerelease: Option<bool>, auto_update: Option<bool>) -> Result<(), String> {
-    let mut st = app.state.lock().await;
-    if let Some(v) = allow_prerelease {
-        st.allow_prerelease = v;
-        logi!("allow_prerelease = {v}");
-    }
-    if let Some(v) = auto_update {
-        st.auto_update = v;
-        logi!("auto_update = {v}");
-    }
-    st.save().map_err(err)
+    change_settings(&app, |st| {
+        if let Some(v) = allow_prerelease {
+            st.allow_prerelease = v;
+            logi!("allow_prerelease = {v}");
+        }
+        if let Some(v) = auto_update {
+            st.auto_update = v;
+            logi!("auto_update = {v}");
+        }
+    })
+    .await
 }
 
 #[tauri::command]
 async fn set_pin(app: State<'_, Shared>, key: String, pinned: bool) -> Result<(), String> {
-    let mut st = app.state.lock().await;
-    if pinned {
-        st.pinned.insert(key);
-    } else {
-        st.pinned.remove(&key);
-    }
-    st.save().map_err(err)
+    change_settings(&app, |st| {
+        if pinned {
+            st.pinned.insert(key);
+        } else {
+            st.pinned.remove(&key);
+        }
+    })
+    .await
 }
 
 #[tauri::command]
 async fn set_ignore(app: State<'_, Shared>, key: String, ignored: bool) -> Result<(), String> {
-    let mut st = app.state.lock().await;
-    if ignored {
-        st.ignored.insert(key);
-    } else {
-        st.ignored.remove(&key);
-    }
-    st.save().map_err(err)
+    change_settings(&app, |st| {
+        if ignored {
+            st.ignored.insert(key);
+        } else {
+            st.ignored.remove(&key);
+        }
+    })
+    .await
 }
 
 async fn current_install(app: &App) -> Result<String, String> {
@@ -880,7 +897,7 @@ async fn install_from(
             .map_err(err)?
             .map_err(err)?
     };
-    let mut fresh = state::AppState::load();
+    let fresh = state::AppState::load();
     let protected = if entry.map(|e| e.group_required_dependencies).unwrap_or(false) {
         let scan_path = install.clone();
         let folders = tokio::task::spawn_blocking(move || wow::scan_addons(Path::new(&scan_path)))
@@ -906,9 +923,8 @@ async fn install_from(
         folders,
         installed_at: state::now_secs(),
     };
-    record_install(&mut fresh, key, &rec);
-    fresh.save().map_err(err)?;
-    *app.state.lock().await = fresh;
+    let (key_owned, rec_saved) = (key.to_string(), rec.clone());
+    change_settings(app, move |st| record_install(st, &key_owned, &rec_saved)).await?;
     drop(lock);
     logi!("installed {key} {} ({} folders)", rec.version, rec.folders.len());
     Ok(rec)
@@ -1298,16 +1314,29 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
             .map_err(err)?
             .map_err(err)?
     };
-    let gone = tokio::task::spawn_blocking(move || install::remove_folders_locked(&addons, &pkg.folders))
+    // Check ownership again under the lock: only folders the saved record still
+    // assigns to this package are removed.
+    let owned = state::AppState::load().installed.get(&key).map(|i| i.folders.clone()).unwrap_or_default();
+    let to_remove: Vec<String> = pkg
+        .folders
+        .iter()
+        .filter(|f| owned.iter().any(|o| o.eq_ignore_ascii_case(f)))
+        .cloned()
+        .collect();
+    if to_remove.is_empty() {
+        return Err("That addon is no longer recorded as installed by this copy, so nothing was removed".into());
+    }
+    let gone = tokio::task::spawn_blocking(move || install::remove_folders_locked(&addons, &to_remove))
         .await
         .map_err(err)?
         .map_err(err)?;
-    let mut fresh = state::AppState::load();
-    fresh.installed.remove(&key);
-    fresh.pinned.remove(&key);
-    fresh.ignored.remove(&key);
-    fresh.save().map_err(err)?;
-    *app.state.lock().await = fresh;
+    let key_owned = key.clone();
+    change_settings(&app, move |st| {
+        st.installed.remove(&key_owned);
+        st.pinned.remove(&key_owned);
+        st.ignored.remove(&key_owned);
+    })
+    .await?;
     drop(lock);
     logi!("removed {key}: {:?}", gone);
     Ok(gone)
@@ -1437,9 +1466,7 @@ async fn check_self_update(app: State<'_, Shared>) -> Result<selfupdate::SelfUpd
 
 #[tauri::command]
 async fn skip_self_update(app: State<'_, Shared>, tag: String) -> Result<(), String> {
-    let mut st = app.state.lock().await;
-    st.skip_self_update = Some(tag);
-    st.save().map_err(err)
+    change_settings(&app, |st| st.skip_self_update = Some(tag)).await
 }
 
 #[cfg(windows)]
@@ -1539,9 +1566,7 @@ async fn whats_new(app: State<'_, Shared>) -> Result<Option<WhatsNew>, String> {
             }
         }
     }
-    let mut st = app.state.lock().await;
-    st.last_seen_build = current;
-    st.save().map_err(err)?;
+    change_settings(&app, |st| st.last_seen_build = current).await?;
     Ok(result)
 }
 
@@ -1643,21 +1668,25 @@ pub fn cli(args: &[String]) -> i32 {
         match cmd {
             "installs" => {
                 let found = wow::find_installs();
-                let mut st = app.state.lock().await;
-                if st.install_path.is_none() {
+                if app.state.lock().await.install_path.is_none() {
                     if let Some(f) = found.iter().find(|i| i.flavor == "forever") {
-                        st.install_path = Some(f.path.clone());
-                        st.save().map_err(err)?;
+                        let path = f.path.clone();
+                        change_settings(&app, |st| {
+                            if st.install_path.is_none() {
+                                st.install_path = Some(path.clone());
+                            }
+                        })
+                        .await?;
                     }
                 }
-                Ok(serde_json::json!({ "installs": found, "selected": st.install_path }))
+                let selected = app.state.lock().await.install_path.clone();
+                Ok(serde_json::json!({ "installs": found, "selected": selected }))
             }
             "use" => {
                 let p = args.get(1).ok_or("usage: use <product folder>")?;
                 let info = wow::describe_install(Path::new(p)).ok_or("not a WoW product folder")?;
-                let mut st = app.state.lock().await;
-                st.install_path = Some(info.path.clone());
-                st.save().map_err(err)?;
+                let path = info.path.clone();
+                change_settings(&app, |st| st.install_path = Some(path)).await?;
                 Ok(serde_json::to_value(info).unwrap())
             }
             "scan" => Ok(serde_json::to_value(scan_packages(&app).await?).unwrap()),
@@ -1782,29 +1811,29 @@ pub fn cli(args: &[String]) -> i32 {
                 let dir = addons_dir(&install);
                 let lock = install::lock_addons(&dir).map_err(err)?;
                 let gone = install::remove_folders_locked(&dir, &pkg.folders).map_err(err)?;
-                let mut fresh = state::AppState::load();
-                fresh.installed.remove(key);
-                fresh.pinned.remove(key);
-                fresh.ignored.remove(key);
-                fresh.save().map_err(err)?;
-                *app.state.lock().await = fresh;
+                let key_owned = key.clone();
+                change_settings(&app, move |st| {
+                    st.installed.remove(&key_owned);
+                    st.pinned.remove(&key_owned);
+                    st.ignored.remove(&key_owned);
+                })
+                .await?;
                 drop(lock);
                 Ok(serde_json::json!({ "removed": gone }))
             }
             "prerelease" => {
                 let v = args.get(1).map(|s| s == "on").unwrap_or(false);
-                let mut st = app.state.lock().await;
-                st.allow_prerelease = v;
-                st.save().map_err(err)?;
+                change_settings(&app, |st| st.allow_prerelease = v).await?;
                 Ok(serde_json::json!({ "allow_prerelease": v }))
             }
             "pin" | "ignore" => {
                 let key = args.get(1).ok_or("usage: pin|ignore <key> on|off")?.clone();
                 let on = args.get(2).map(|s| s == "on").unwrap_or(true);
-                let mut st = app.state.lock().await;
-                let set = if cmd == "pin" { &mut st.pinned } else { &mut st.ignored };
-                if on { set.insert(key.clone()); } else { set.remove(&key); }
-                st.save().map_err(err)?;
+                change_settings(&app, |st| {
+                    let set = if cmd == "pin" { &mut st.pinned } else { &mut st.ignored };
+                    if on { set.insert(key.clone()); } else { set.remove(&key); }
+                })
+                .await?;
                 Ok(serde_json::json!({ cmd: key, "on": on }))
             }
             "export" => {
