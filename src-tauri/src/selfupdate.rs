@@ -14,7 +14,6 @@ use serde::{Deserialize, Serialize};
 use std::path::Path;
 #[cfg(windows)]
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(windows)]
 use std::path::PathBuf;
 
 pub const LATEST_URL: &str =
@@ -194,12 +193,20 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
     // copy removed; until then the old copy is the fallback.
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
     let marker = dir.join(format!("AddonForge-started-{nanos:x}.flag"));
-    let child = std::process::Command::new(&target)
+    // A launch refused by Defender or Windows fails in spawn(), not in the child, so
+    // both failure paths go through the same rollback below.
+    let started = match std::process::Command::new(&target)
         .arg("--replaced")
         .arg(&old)
         .arg(&marker)
-        .spawn()?;
-    let started = tokio::task::spawn_blocking(move || wait_for_start(child, &marker)).await?;
+        .spawn()
+    {
+        Ok(child) => tokio::task::spawn_blocking(move || wait_for_start(child, &marker)).await?,
+        Err(e) => {
+            crate::loge!("self-update: could not launch the new version: {e}");
+            false
+        }
+    };
     if !started {
         // Put the working copy back. Installed: the old exe is renamed back into place.
         let _ = std::fs::remove_file(&target);

@@ -866,7 +866,8 @@ async fn install_from(
         protected_package_folders(&st, &[], key)
     };
     logi!("install {key} from {} {} -> {}", src.label(), remote.version, remote.download_url);
-    let tmp = addons.join(install::TMP_DIR).join("dl");
+    // Staged outside the addons folder: the install lock and recovery never touch it.
+    let tmp = state::AppState::dir().join("downloads");
     let zip = install::download(&app.client, &remote.download_url, &tmp, &remote.filename)
         .await
         .map_err(|e| {

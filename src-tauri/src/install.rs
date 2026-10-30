@@ -420,6 +420,8 @@ pub fn place(
 
 /// Delete the given addon folders (used by "Remove").
 pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
+    // Same lock as installs, so a removal cannot race an install in another copy.
+    let _guard = lock_tmp(addons_dir, true).ok_or_else(|| anyhow!("could not lock the addons folder"))?;
     let mut gone = Vec::new();
     for f in folders {
         if f.is_empty() || f.starts_with('.') || f.contains("..") || f.contains(['/', '\\']) {
