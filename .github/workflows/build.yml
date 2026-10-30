@@ -26,3 +26,5 @@ jobs:
       - name: cargo test
         working-directory: src-tauri
         run: cargo test
+      - name: UI checks
+        run: node scripts/test-ui.js

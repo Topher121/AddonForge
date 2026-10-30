@@ -274,12 +274,28 @@ pub fn note_replace(old: PathBuf, marker: Option<PathBuf>) {
     let _ = PENDING_REPLACE.set((old, marker));
 }
 
+/// Create the start marker, but only as a new file named like ours, in the app
+/// folder. It never overwrites an existing file.
+fn write_start_marker(marker: &Path) {
+    let app_dir = std::env::current_exe().ok().and_then(|me| me.parent().map(Path::to_path_buf));
+    let name = marker.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    let ours = name.starts_with("AddonForge-started-") && name.ends_with(".flag");
+    if app_dir.as_deref() != marker.parent() || !ours {
+        crate::loge!("self-update: refusing to write start marker {}", marker.display());
+        return;
+    }
+    if let Ok(mut f) = std::fs::OpenOptions::new().write(true).create_new(true).open(marker) {
+        use std::io::Write;
+        let _ = f.write_all(version().as_bytes());
+    }
+}
+
 /// Called once the window is up: this copy has really started, so it tells the
 /// old copy and removes the old exe.
 pub fn confirm_started() {
     if let Some((old, marker)) = PENDING_REPLACE.get() {
         if let Some(marker) = marker {
-            let _ = std::fs::write(marker, version());
+            write_start_marker(marker);
         }
         let old = old.clone();
         std::thread::spawn(move || finish_replace(&old));
