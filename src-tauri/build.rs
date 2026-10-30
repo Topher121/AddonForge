@@ -25,18 +25,15 @@ fn main() {
     println!("cargo:rerun-if-changed=icons/icon.ico");
     println!("cargo:rerun-if-changed=icons/icon.png");
 
-    const MASK: u8 = 0x5A;
-    let masked: Vec<u8> = curseforge_key()
-        .map(|k| k.bytes().map(|b| b ^ MASK).collect())
-        .unwrap_or_default();
+    // Plain embedding since build 26: the old XOR mask hid nothing (any copy of
+    // the app can be read back) and its byte pattern was a detector signal.
+    let key = curseforge_key().unwrap_or_default();
     let out = Path::new(&env::var("OUT_DIR").expect("OUT_DIR")).join("cf_key.rs");
-    let body = format!(
-        "pub const CF_KEY_MASK: u8 = {MASK};\npub const CF_KEY_MASKED: &[u8] = &{masked:?};\n"
-    );
+    let body = format!("pub const CF_KEY: &str = {key:?};\n");
     fs::write(&out, body).expect("write cf_key.rs");
     println!(
         "cargo:warning=CurseForge key: {}",
-        if masked.is_empty() { "not present (CurseForge disabled in this build)" } else { "embedded" }
+        if key.is_empty() { "not present (CurseForge disabled in this build)" } else { "embedded" }
     );
 
     tauri_build::build()
