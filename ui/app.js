@@ -1143,6 +1143,9 @@ $("selfupdate-go").onclick = async () => {
     await detect();
     await loadSettings();
   }
+  // The interface is up. Only now does a freshly updated copy count as started,
+  // and this comes before any network work, so a slow check cannot run past the update deadline.
+  invoke("app_ready").catch(() => {});
   if (settings && settings.install_path) {
     await rescan();
     await checkUpdates();
@@ -1166,6 +1169,4 @@ $("selfupdate-go").onclick = async () => {
         .finally(() => $("modal-no").classList.remove("hidden"));
     })
     .catch(() => {});
-  // The interface is up. Only now does a freshly updated copy count as started.
-  invoke("app_ready").catch(() => {});
 })();

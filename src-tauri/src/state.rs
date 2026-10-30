@@ -88,6 +88,16 @@ impl AppState {
         read(dir.join("state.json")).or_else(|| read(dir.join("state.json.bak"))).unwrap_or_default()
     }
 
+    /// Exclusive lock on the settings folder, shared by every copy of the app.
+    /// Held across reload -> change -> save so no copy can overwrite another's change.
+    pub fn lock_settings() -> anyhow::Result<fs::File> {
+        let dir = Self::dir();
+        fs::create_dir_all(&dir)?;
+        let file = fs::OpenOptions::new().create(true).write(true).truncate(false).open(dir.join("state.lock"))?;
+        file.lock()?;
+        Ok(file)
+    }
+
     pub fn save(&self) -> anyhow::Result<()> {
         self.save_to(&Self::dir())
     }
