@@ -128,6 +128,28 @@ $latest = [ordered]@{
 $latestPath = Join-Path $root "build\latest.json"
 WriteUtf8NoBom $latestPath ($latest | ConvertTo-Json -Depth 4)
 
+# ---- Defender gate: never publish a file Defender flags -------------------
+# Scans the exact exe (and installer) about to be released. Read-only with
+# respect to Defender: no settings, exclusions or restores. Any detection on
+# these files stops the build before anything reaches GitHub.
+$gateStart = Get-Date
+$gateFiles = @($out)
+if ($setupName -and (Test-Path (Join-Path $root "build\$setupName"))) { $gateFiles += (Join-Path $root "build\$setupName") }
+foreach ($f in $gateFiles) {
+    try { Start-MpScan -ScanType CustomScan -ScanPath $f -ErrorAction Stop }
+    catch { throw "Defender scan could not run on $f ($($_.Exception.Message)). Not publishing." }
+}
+Start-Sleep -Seconds 3
+$gateHits = @(Get-MpThreatDetection | Where-Object { $_.InitialDetectionTime -ge $gateStart } | Where-Object {
+    $r = $_.Resources -join " "
+    $gateFiles | Where-Object { $r -like "*$(Split-Path $_ -Leaf)*" }
+})
+if ($gateHits.Count -gt 0) {
+    $names = $gateHits | ForEach-Object { try { (Get-MpThreat -ThreatID $_.ThreatID).ThreatName } catch { "threat $($_.ThreatID)" } }
+    throw "DEFENDER FLAGGED the release build: $($names -join ', '). Not publishing. Report the exact name to the maintainer; do not add exclusions."
+}
+Write-Host "Defender gate: clean ($($gateFiles.Count) file(s))" -ForegroundColor Green
+
 if ($Release) {
     Push-Location $root
     try {
