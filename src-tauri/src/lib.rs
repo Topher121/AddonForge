@@ -717,7 +717,13 @@ async fn do_backup(app: &App) -> Result<BackupResult, String> {
     let flavor = folder_name(&install).trim_matches('_').to_string();
     let stamp = chrono_stamp();
     let dir = dirs::document_dir().unwrap_or_else(|| AppState::dir()).join("AddonForge backups");
-    let dest = dir.join(format!("WTF-{flavor}-{stamp}.zip"));
+    // Never overwrite an earlier backup from the same minute.
+    let mut dest = dir.join(format!("WTF-{flavor}-{stamp}.zip"));
+    let mut n = 2;
+    while dest.exists() {
+        dest = dir.join(format!("WTF-{flavor}-{stamp}-{n}.zip"));
+        n += 1;
+    }
     let d2 = dest.clone();
     let s = tokio::task::spawn_blocking(move || backup::zip_dir(&src, &d2)).await.map_err(err)?.map_err(err)?;
     logi!("backed up WTF to {} ({} files)", dest.display(), s.files);
@@ -1551,7 +1557,35 @@ async fn diagnostics(app: State<'_, Shared>) -> Result<String, String> {
     }
     s.push_str("\n--- log tail ---\n");
     s.push_str(&log::tail(40));
-    Ok(s)
+    Ok(redact_paths(&s))
+}
+
+/// Replace the user's home folder (and any `C:\Users\<name>` path) with a
+/// placeholder, so a report can be shared without showing a Windows username.
+fn redact_paths(text: &str) -> String {
+    let mut out = text.to_string();
+    if let Some(home) = dirs::home_dir() {
+        let home = home.to_string_lossy().to_string();
+        if !home.is_empty() {
+            out = out.replace(&home, "~");
+            out = out.replace(&home.replace('\\', "/"), "~");
+        }
+    }
+    // Any remaining users folder, from either slash style.
+    for marker in ["Users\\", "Users/"] {
+        let mut result = String::new();
+        let mut rest = out.as_str();
+        while let Some(i) = rest.find(marker) {
+            result.push_str(&rest[..i + marker.len()]);
+            rest = &rest[i + marker.len()..];
+            let name_end = rest.find(|c: char| c == '\\' || c == '/' || c.is_whitespace()).unwrap_or(rest.len());
+            result.push_str("<user>");
+            rest = &rest[name_end..];
+        }
+        result.push_str(rest);
+        out = result;
+    }
+    out
 }
 
 // ---------------------------------------------------------------- boot
@@ -1798,10 +1832,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(app)
-        .setup(|_app| {
-            selfupdate::confirm_started();
-            Ok(())
-        })
         .invoke_handler(tauri::generate_handler![
             get_settings,
             find_installs,
@@ -1836,9 +1866,18 @@ pub fn run() {
             apply_self_update,
             whats_new,
             diagnostics,
+            app_ready,
         ])
         .run(tauri::generate_context!())
         .expect("error while running AddonForge");
+}
+
+/// Called by the interface once it has finished starting. A copy that was just
+/// updated counts as started only from this point, so a window that loads but
+/// cannot run keeps the previous copy as a fallback.
+#[tauri::command]
+fn app_ready() {
+    selfupdate::confirm_started();
 }
 
 pub fn note_replace(old: std::path::PathBuf, marker: Option<std::path::PathBuf>) {
@@ -2495,5 +2534,18 @@ mod tests {
         let pkgs = build_packages(&st, &Catalog::default(), &[folder("Thing", &[], None)]);
         assert_eq!(pkgs[0].key, "github:someone/Thing");
         assert_eq!(pkgs[0].source, Some(Source::Github("someone/Thing".into())));
+    }
+}
+
+#[cfg(test)]
+mod redact_tests {
+    use super::redact_paths;
+
+    #[test]
+    fn reports_do_not_show_a_windows_username() {
+        let text = "Exe: C:\\Users\\SomeOne\\AppData\\Local\\AddonForge\\addonforge.exe\nInstall: C:/Users/SomeOne/Games/World of Warcraft";
+        let out = redact_paths(text);
+        assert!(!out.contains("SomeOne"), "{out}");
+        assert!(out.contains("<user>"));
     }
 }
