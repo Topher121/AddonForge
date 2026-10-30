@@ -110,20 +110,15 @@ pub async fn remote_icon(client: &reqwest::Client, url: &str) -> Option<String> 
             }
         }
     }
-    let bytes = client
+    let resp = client
         .get(url)
         .timeout(Duration::from_secs(15))
         .send()
         .await
         .ok()?
         .error_for_status()
-        .ok()?
-        .bytes()
-        .await
         .ok()?;
-    if bytes.len() > 2 * 1024 * 1024 {
-        return None;
-    }
+    let bytes = read_capped(resp, 2 * 1024 * 1024).await.ok()?;
     let img = image::load_from_memory(&bytes).ok()?;
     let png = encode_png(img).ok()?;
     let _ = fs::create_dir_all(cache_dir());
@@ -527,10 +522,8 @@ pub async fn preview_image(client: &reqwest::Client, url: &str) -> Option<String
     if let Some(d) = preview_cached(url) {
         return Some(d);
     }
-    let bytes = client.get(url).timeout(Duration::from_secs(20)).send().await.ok()?.error_for_status().ok()?.bytes().await.ok()?;
-    if bytes.len() > 8 * 1024 * 1024 {
-        return None;
-    }
+    let resp = client.get(url).timeout(Duration::from_secs(20)).send().await.ok()?.error_for_status().ok()?;
+    let bytes = read_capped(resp, 8 * 1024 * 1024).await.ok()?;
     let img = image::load_from_memory(&bytes).ok()?;
     let img = if img.width() > PREVIEW_W { img.resize(PREVIEW_W, PREVIEW_W * 4, FilterType::Triangle) } else { img };
     let rgb = img.to_rgb8();
@@ -589,4 +582,17 @@ mod tests {
         assert!(e.contains("\u{2022} one"));
         assert!(!e.contains("code"));
     }
+}
+
+/// Read a response body, stopping as soon as it passes `limit` bytes, so a
+/// server cannot make us hold an arbitrarily large download in memory.
+pub(crate) async fn read_capped(mut resp: reqwest::Response, limit: usize) -> anyhow::Result<Vec<u8>> {
+    let mut out = Vec::new();
+    while let Some(chunk) = resp.chunk().await? {
+        if out.len() + chunk.len() > limit {
+            anyhow::bail!("download is larger than the {} MB limit", limit >> 20);
+        }
+        out.extend_from_slice(&chunk);
+    }
+    Ok(out)
 }

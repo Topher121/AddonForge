@@ -39,9 +39,70 @@ fn unique() -> String {
     format!("{n:x}")
 }
 
-/// Remove stale temp work from a previous crash.
+/// Run at startup. An install interrupted by a crash leaves the folders it
+/// replaced in `<tmp>/<id>/old`. Put back each one whose place is now empty;
+/// any other backup is moved to `<tmp>/recovered` so nothing is deleted. A work
+/// folder is only removed once all its backups have been moved out.
 pub fn clean_tmp(addons_dir: &Path) {
-    let _ = fs::remove_dir_all(addons_dir.join(TMP_DIR));
+    let tmp = addons_dir.join(TMP_DIR);
+    let Ok(entries) = fs::read_dir(&tmp) else { return };
+    let recovered = tmp.join("recovered");
+    for entry in entries.flatten() {
+        let work = entry.path();
+        if !work.is_dir() || work == recovered {
+            continue;
+        }
+        let mut all_moved = true;
+        if let Ok(backups) = fs::read_dir(work.join("old")) {
+            for backup in backups.flatten() {
+                let name = backup.file_name();
+                let target = addons_dir.join(&name);
+                let moved = if target.exists() {
+                    fs::create_dir_all(&recovered).is_ok()
+                        && fs::rename(backup.path(), recovered.join(format!("{}-{}", entry.file_name().to_string_lossy(), name.to_string_lossy()))).is_ok()
+                } else {
+                    fs::rename(backup.path(), &target).is_ok()
+                };
+                crate::logi!("recovered interrupted install: {} ({})", name.to_string_lossy(), if target.exists() { "kept as a backup" } else { "restored" });
+                all_moved &= moved;
+            }
+        }
+        if all_moved {
+            let _ = fs::remove_dir_all(&work);
+        }
+    }
+}
+
+/// Extract with limits, so a small archive cannot fill the disk. Entries that
+/// would leave the destination are refused.
+fn extract_limited(archive: &mut zip::ZipArchive<fs::File>, dest: &Path) -> anyhow::Result<()> {
+    const MAX_ENTRIES: usize = 20_000;
+    const MAX_BYTES: u64 = 1 << 30; // 1 GiB expanded
+    use std::io::Read as _;
+    if archive.len() > MAX_ENTRIES {
+        anyhow::bail!("archive has {} files, more than the {MAX_ENTRIES} allowed", archive.len());
+    }
+    let mut total: u64 = 0;
+    for i in 0..archive.len() {
+        let mut entry = archive.by_index(i)?;
+        let rel = entry.enclosed_name().ok_or_else(|| anyhow!("unsafe path in archive"))?;
+        let out = dest.join(rel);
+        if entry.is_dir() {
+            fs::create_dir_all(&out)?;
+            continue;
+        }
+        if let Some(parent) = out.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        let remaining = MAX_BYTES - total;
+        let mut file = fs::File::create(&out)?;
+        let written = std::io::copy(&mut (&mut entry).take(remaining + 1), &mut file)?;
+        if written > remaining {
+            anyhow::bail!("archive expands past the {} MB limit", MAX_BYTES >> 20);
+        }
+        total += written;
+    }
+    Ok(())
 }
 
 pub async fn download(
@@ -256,10 +317,14 @@ pub fn place(
     fs::create_dir_all(&extract_dir)?;
     fs::create_dir_all(&backup_dir)?;
 
+    // Set when a rollback could not put every folder back. The backups are then
+    // kept in the work folder for clean_tmp to recover on the next start.
+    let keep_backups = std::cell::Cell::new(false);
+
     let result = (|| -> anyhow::Result<Vec<String>> {
         let file = fs::File::open(zip_path)?;
         let mut archive = zip::ZipArchive::new(file).context("not a valid zip")?;
-        archive.extract(&extract_dir).context("extract failed")?;
+        extract_limited(&mut archive, &extract_dir).context("extract failed")?;
         let files = safety_scan(&extract_dir)?;
         crate::logi!("zip ok: {} files, no executables", files);
 
@@ -292,7 +357,9 @@ pub fn place(
         let restore = |moved: &Vec<(PathBuf, PathBuf)>| {
             for (target, backup) in moved.iter().rev() {
                 let _ = fs::remove_dir_all(target);
-                let _ = fs::rename(backup, target);
+                if fs::rename(backup, target).is_err() && backup.exists() {
+                    keep_backups.set(true);
+                }
             }
         };
 
@@ -317,7 +384,11 @@ pub fn place(
         Ok(installed)
     })();
 
-    let _ = fs::remove_dir_all(&work);
+    if !keep_backups.get() {
+        let _ = fs::remove_dir_all(&work);
+    } else {
+        crate::loge!("install rollback incomplete; kept backups in {} for recovery", work.display());
+    }
     let _ = fs::remove_file(zip_path);
     // Leave the tmp root tidy if empty.
     let _ = fs::remove_dir(addons_dir.join(TMP_DIR));
@@ -554,5 +625,61 @@ mod tests {
         let err = safety_scan(&root).unwrap_err().to_string();
         assert!(err.contains("application bundle"), "{err}");
         let _ = fs::remove_dir_all(&root);
+    }
+}
+
+#[cfg(test)]
+mod recovery_tests {
+    use super::*;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("af-recovery-{name}-{}", unique()));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn interrupted_install_puts_back_the_old_folder() {
+        let addons = scratch("restore");
+        // A crash after the old folder was moved aside and before the new one landed.
+        let old = addons.join(TMP_DIR).join("work1").join("old").join("Questie");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("Questie.lua"), "keep me").unwrap();
+        clean_tmp(&addons);
+        assert_eq!(fs::read_to_string(addons.join("Questie").join("Questie.lua")).unwrap(), "keep me");
+        assert!(!addons.join(TMP_DIR).join("work1").exists());
+    }
+
+    #[test]
+    fn interrupted_install_keeps_old_folder_when_a_new_one_exists() {
+        let addons = scratch("keep");
+        fs::create_dir_all(addons.join("Questie")).unwrap();
+        fs::write(addons.join("Questie").join("new.lua"), "new").unwrap();
+        let old = addons.join(TMP_DIR).join("work2").join("old").join("Questie");
+        fs::create_dir_all(&old).unwrap();
+        fs::write(old.join("old.lua"), "old").unwrap();
+        clean_tmp(&addons);
+        // The new install stays in place, and the old folder is kept for recovery.
+        assert!(addons.join("Questie").join("new.lua").exists());
+        assert!(addons.join(TMP_DIR).join("recovered").join("work2-Questie").join("old.lua").exists());
+    }
+
+    #[test]
+    fn extraction_refuses_paths_that_leave_the_folder() {
+        let dir = scratch("zip");
+        let zip_path = dir.join("evil.zip");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut w = zip::ZipWriter::new(file);
+            let opts = zip::write::SimpleFileOptions::default();
+            w.start_file("../escape.txt", opts).unwrap();
+            std::io::Write::write_all(&mut w, b"nope").unwrap();
+            w.finish().unwrap();
+        }
+        let mut archive = zip::ZipArchive::new(fs::File::open(&zip_path).unwrap()).unwrap();
+        let out = dir.join("out");
+        fs::create_dir_all(&out).unwrap();
+        assert!(extract_limited(&mut archive, &out).is_err());
+        assert!(!dir.join("escape.txt").exists());
     }
 }

@@ -79,10 +79,9 @@ impl AppState {
     }
 
     pub fn load() -> Self {
-        match fs::read(Self::path()) {
-            Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_default(),
-            Err(_) => Self::default(),
-        }
+        // Fall back to the last good copy if the main file is missing or unreadable.
+        let read = |p: PathBuf| -> Option<Self> { serde_json::from_slice(&fs::read(p).ok()?).ok() };
+        read(Self::path()).or_else(|| read(Self::dir().join("state.json.bak"))).unwrap_or_default()
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
@@ -91,9 +90,12 @@ impl AppState {
         let tmp = dir.join("state.json.tmp");
         fs::write(&tmp, serde_json::to_vec_pretty(self)?)?;
         let final_path = Self::path();
+        // Keep the previous copy as a recovery file before replacing it.
         if final_path.exists() {
-            fs::remove_file(&final_path)?;
+            let _ = fs::copy(&final_path, dir.join("state.json.bak"));
         }
+        // Rust's rename replaces an existing file on Windows, so the state file is
+        // never missing part-way through a save.
         fs::rename(&tmp, &final_path)?;
         Ok(())
     }
