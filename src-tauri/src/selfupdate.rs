@@ -208,14 +208,20 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         }
     };
     if !started {
-        // Put the working copy back. Installed: the old exe is renamed back into place.
-        let _ = std::fs::remove_file(&target);
-        if !portable {
-            let _ = std::fs::rename(&old, &current);
-        }
+        restore_previous(&target, &old, &current, portable);
         anyhow::bail!("the new version did not start, so the previous version was kept");
     }
     Ok(target)
+}
+
+/// Put the previous copy back after a failed launch. Portable: the old file was
+/// never moved, so only the new file goes. Installed: the old exe was renamed
+/// aside, so it is renamed back over the new one.
+pub(crate) fn restore_previous(target: &Path, old: &Path, current: &Path, portable: bool) {
+    let _ = std::fs::remove_file(target);
+    if !portable {
+        let _ = std::fs::rename(old, current);
+    }
 }
 
 /// True once the new copy has written its start marker. False if it exits first,
@@ -323,3 +329,43 @@ mod leftover_tests {
         assert!(!is_update_leftover(Path::new("C:/Apps/AddonForge/sub/AddonForge.exe"), dir));
     }
 }
+
+#[cfg(test)]
+mod rollback_tests {
+    use super::restore_previous;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("af-rollback-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn installed_copy_gets_the_old_exe_back_in_place() {
+        let dir = scratch("installed");
+        let current = dir.join("AddonForge.exe");
+        let old = dir.join("AddonForge.exe.old");
+        // The update renamed the old exe aside and wrote the new one at the same path.
+        fs::write(&old, "old build").unwrap();
+        fs::write(&current, "new build").unwrap();
+        restore_previous(&current, &old, &current, false);
+        assert_eq!(fs::read_to_string(&current).unwrap(), "old build");
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn portable_copy_keeps_the_old_exe_and_drops_the_new_one() {
+        let dir = scratch("portable");
+        let old = dir.join("AddonForge-v0.4.0-b23.exe");
+        let target = dir.join("AddonForge-v0.4.0-b27.exe");
+        fs::write(&old, "old build").unwrap();
+        fs::write(&target, "new build").unwrap();
+        restore_previous(&target, &old, &old, true);
+        assert!(!target.exists());
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old build");
+    }
+}
+
