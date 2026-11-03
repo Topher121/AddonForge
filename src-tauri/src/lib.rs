@@ -442,21 +442,31 @@ fn entry_hint(cat: &Catalog, pkg: &Package) -> (Option<String>, Option<bool>) {
     (entry.and_then(|e| e.asset_hint.clone()), entry.and_then(|e| e.forever))
 }
 
+fn entry_offers(e: &CatalogEntry, src: &Source) -> bool {
+    match src {
+        Source::Github(repo) => e.github.as_deref().map(|g| g.eq_ignore_ascii_case(repo)).unwrap_or(false),
+        Source::Wago(id) => e.wago.as_ref() == Some(id),
+        Source::Wowi(id) => e.wowi == Some(*id),
+        Source::Tukui(id) => e.tukui.as_ref() == Some(id),
+        Source::Curse(id) => e.curse == Some(*id),
+    }
+}
+
 fn entry_for_source<'a>(cat: &'a Catalog, key: &str, src: &Source) -> Option<&'a CatalogEntry> {
     key.strip_prefix("cat:").and_then(|id| cat.addons.iter().find(|e| e.id == id))
-        .or_else(|| cat.addons.iter().find(|e| match src {
-            Source::Github(repo) => e.github.as_deref().map(|g| g.eq_ignore_ascii_case(repo)).unwrap_or(false),
-            Source::Wago(id) => e.wago.as_ref() == Some(id),
-            Source::Wowi(id) => e.wowi == Some(*id),
-            Source::Tukui(id) => e.tukui.as_ref() == Some(id),
-            Source::Curse(id) => e.curse == Some(*id),
-        }))
+        .or_else(|| cat.addons.iter().find(|e| entry_offers(e, src)))
 }
 
 fn key_for_source(cat: &Catalog, st: &AppState, src: &Source, requested: Option<&str>) -> String {
     let entry = entry_for_source(cat, "", src);
     if let Some(key) = requested {
-        if st.installed.contains_key(key) || entry.is_none() {
+        // An imported list can't take a catalogue addon's identity for a source
+        // that entry doesn't list.
+        let claims_other_entry = key
+            .strip_prefix("cat:")
+            .and_then(|id| cat.addons.iter().find(|e| e.id == id))
+            .is_some_and(|e| !entry_offers(e, src));
+        if !claims_other_entry && (st.installed.contains_key(key) || entry.is_none()) {
             return key.to_string();
         }
     }
@@ -1272,6 +1282,7 @@ async fn install_source(
     key: Option<String>,
     allow_non_forever: Option<bool>,
 ) -> Result<Package, String> {
+    let source = sources::checked_source(source)?;
     let cat = catalog_cached(&app).await;
     let st = app.state.lock().await.clone();
     let key = key_for_source(&cat, &st, &source, key.as_deref());
@@ -1436,10 +1447,10 @@ async fn import_list(app: State<'_, Shared>, path: String) -> Result<Vec<ImportR
             let key = it.source.as_ref().map(|src| key_for_source(&cat, &st, src, Some(&it.key)))
                 .unwrap_or(it.key);
             let installed = have.contains(&key);
-            let (installable, why) = match &it.source {
+            let (installable, why) = match it.source.clone().map(sources::checked_source) {
                 None => (false, "no source (probably CurseForge-only or a personal addon)".into()),
-                Some(Source::Wago(_)) => (false, "Wago isn't a source any more".into()),
-                Some(_) => (true, String::new()),
+                Some(Err(why)) => (false, why),
+                Some(Ok(_)) => (true, String::new()),
             };
             ImportRow { name: it.name, key, source: it.source, installed, installable, why }
         })
@@ -2060,6 +2071,9 @@ mod tests {
         assert_eq!(key_for_source(&catalog, &state, &Source::Github("other/Atlas".into()), None), "github:other/Atlas");
         assert_eq!(key_for_source(&catalog, &state, &Source::Github("other/Atlas".into()), Some("custom:Atlas")), "custom:Atlas");
         assert_eq!(key_for_source(&catalog, &state, &Source::Wowi(123), None), "wowi:123");
+        // A list can't install another repo under a catalogue addon's identity.
+        assert_eq!(key_for_source(&catalog, &state, &Source::Github("other/Atlas".into()), Some("cat:atlas")), "github:other/Atlas");
+        assert_eq!(key_for_source(&catalog, &state, &source, Some("cat:atlas")), "cat:atlas");
 
         let recorded = Installed {
             source: "github".into(), source_id: "Author/ATLAS".into(),

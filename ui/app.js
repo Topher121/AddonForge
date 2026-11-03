@@ -1114,7 +1114,7 @@ function renderImportPlan(plan) {
     `<div class="muted">${plan.length} in the list · ${plan.filter((r) => r.installed).length} already installed · ${todo.length} to install · ${plan.filter((r) => !r.installable && !r.installed).length} can't be installed automatically</div>` +
     `<ul class="plan">` +
     plan
-      .map((r) => `<li class="${r.installed ? "have" : r.installable ? "todo" : "skip"}">${esc(r.name)} <span class="muted">${r.installed ? "installed" : r.installable ? r.source.kind + " · " + r.source.id : r.why}</span></li>`)
+      .map((r) => `<li class="${r.installed ? "have" : r.installable ? "todo" : "skip"}">${esc(r.name)} <span class="muted">${esc(r.installed ? "installed" : r.installable ? r.source.kind + " · " + r.source.id : r.why)}</span></li>`)
       .join("") +
     `</ul>` +
     (todo.length ? `<button id="btn-import-go" class="btn primary">Install ${todo.length} missing</button>` : "");

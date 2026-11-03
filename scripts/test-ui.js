@@ -166,6 +166,9 @@ assert.equal(run("installSources(catalog[3]).length"), 0, 'Wago-only is link onl
 assert.match(element('browse-list').innerHTML, /<select class="src-pick"[^>]*><option value="github">GitHub/);
 assert.match(element('browse-list').innerHTML, /link only/);
 assert.doesNotMatch(element('browse-list').innerHTML, /Wago key/);
+run(`renderImportPlan([{ name: 'List <b>', key: 'x', installed: false, installable: true, source: { kind: 'github', id: 'a/<img src=x>' }, why: '' }])`);
+assert.match(element('import-plan').innerHTML, /a\/&lt;img src=x&gt;/, 'An imported source is shown as text');
+assert.doesNotMatch(element('import-plan').innerHTML, /<img/, 'An imported list cannot add markup');
 run(`settings = null; catalog = [];`);
 run(`packages = []; renderInstalled()`);
 assert.equal(String(element('stat-updates').textContent), '0');

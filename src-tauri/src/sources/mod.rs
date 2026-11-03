@@ -124,7 +124,9 @@ pub fn parse_github_repo(input: &str) -> Option<String> {
     if parts.len() < 2 {
         return None;
     }
-    let ok = |p: &str| !p.is_empty() && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'));
+    let ok = |p: &str| {
+        !p.is_empty() && p != "." && p != ".." && p.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+    };
     let (owner, repo) = (parts[0], parts[1].trim_end_matches(".git"));
     if ok(owner) && ok(repo) {
         Some(format!("{owner}/{repo}"))
@@ -133,9 +135,44 @@ pub fn parse_github_repo(input: &str) -> Option<String> {
     }
 }
 
+/// A source that came from outside the app (an imported list). Same rules as
+/// typing it into the search box, and Wago is not a source any more.
+pub fn checked_source(source: Source) -> Result<Source, String> {
+    let bad = |what: &str, id: &str| Err(format!("{what} {id:?} in this list isn't valid"));
+    match &source {
+        Source::Github(repo) => {
+            if parse_github_repo(repo).as_deref() != Some(repo.as_str()) {
+                return bad("GitHub repo", repo);
+            }
+        }
+        Source::Tukui(slug) => {
+            if slug.is_empty() || !slug.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') {
+                return bad("TukUI addon", slug);
+            }
+        }
+        Source::Wago(_) => return Err("Wago isn't a source any more".into()),
+        Source::Wowi(_) | Source::Curse(_) => {}
+    }
+    Ok(source)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn imported_sources_are_checked() {
+        let github = |r: &str| Source::Github(r.into());
+        assert!(checked_source(github("BigWigsMods/BigWigs")).is_ok());
+        for repo in ["../../user", "a/b/../../c", "a/b?x=1", "https://github.com/a/b", "nope", "a/.."] {
+            assert!(checked_source(github(repo)).is_err(), "{repo}");
+        }
+        assert!(checked_source(Source::Tukui("elvui".into())).is_ok());
+        assert!(checked_source(Source::Tukui("../elvui".into())).is_err());
+        assert!(checked_source(Source::Wago("abc".into())).is_err());
+        assert!(checked_source(Source::Wowi(1)).is_ok());
+        assert!(checked_source(Source::Curse(1)).is_ok());
+    }
+
     #[test]
     fn parses_github_inputs() {
         assert_eq!(parse_github_repo("BigWigsMods/BigWigs").as_deref(), Some("BigWigsMods/BigWigs"));
