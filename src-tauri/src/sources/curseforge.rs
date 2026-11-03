@@ -75,16 +75,22 @@ pub struct Category {
 pub enum Sort {
     Popularity,
     Downloads,
+    DownloadsAscending,
     Updated,
+    UpdatedAscending,
     Name,
+    NameDescending,
 }
 
 impl Sort {
     pub fn parse(s: &str) -> Sort {
         match s {
             "downloads" => Sort::Downloads,
+            "downloads-asc" => Sort::DownloadsAscending,
             "updated" => Sort::Updated,
+            "updated-asc" => Sort::UpdatedAscending,
             "name" => Sort::Name,
+            "name-desc" => Sort::NameDescending,
             _ => Sort::Popularity,
         }
     }
@@ -92,8 +98,11 @@ impl Sort {
         match self {
             Sort::Popularity => "sortField=2&sortOrder=desc",
             Sort::Downloads => "sortField=6&sortOrder=desc",
+            Sort::DownloadsAscending => "sortField=6&sortOrder=asc",
             Sort::Updated => "sortField=3&sortOrder=desc",
+            Sort::UpdatedAscending => "sortField=3&sortOrder=asc",
             Sort::Name => "sortField=4&sortOrder=asc",
+            Sort::NameDescending => "sortField=4&sortOrder=desc",
         }
     }
 }
@@ -397,6 +406,20 @@ mod tests {
             file_date: date.into(),
             download_url: url.map(String::from),
             sortable_game_versions: types.iter().map(|t| SortableVersion { game_version_type_id: Some(*t) }).collect(),
+        }
+    }
+
+    #[test]
+    fn search_sort_directions_reach_the_api() {
+        for (value, expected) in [
+            ("downloads", "sortField=6&sortOrder=desc"),
+            ("downloads-asc", "sortField=6&sortOrder=asc"),
+            ("updated", "sortField=3&sortOrder=desc"),
+            ("updated-asc", "sortField=3&sortOrder=asc"),
+            ("name", "sortField=4&sortOrder=asc"),
+            ("name-desc", "sortField=4&sortOrder=desc"),
+        ] {
+            assert_eq!(Sort::parse(value).query(), expected);
         }
     }
 

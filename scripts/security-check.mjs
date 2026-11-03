@@ -68,6 +68,8 @@ const SEC = /Set-MpPreference|Add-MpPreference|Remove-MpPreference|MpCmdRun|-Exc
 const scan = dir => {
   for (const name of readdirSafe(dir)) {
     const p = resolve(dir, name);
+    // Local diagnostics and recovery copies are excluded from app distribution.
+    if (dir === ROOT && name === 'private') continue;
     if (/node_modules|target|\.git$|data$|logs$/.test(p)) continue;
     if (isDir(p)) scan(p);
     else if (/\.(ps1|js|mjs|cjs|cmd|bat|sh|json)$/.test(name) && !/security-check.m?js$/.test(name)) {

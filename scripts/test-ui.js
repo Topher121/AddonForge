@@ -7,13 +7,22 @@ function element(id) {
   if (!nodes.has(id)) nodes.set(id, {
     value: '', checked: false, textContent: '', innerHTML: '', dataset: {},
     classList: { add() {}, remove() {}, toggle() {} },
-    listeners: {}, addEventListener(type, fn) { this.listeners[type] = fn; }, setAttribute() {}, removeAttribute() {},
+    listeners: {}, attributes: {}, addEventListener(type, fn) { this.listeners[type] = fn; },
+    setAttribute(name, value) { this.attributes[name] = String(value); },
+    removeAttribute(name) { delete this.attributes[name]; },
     focus() { document.activeElement = this; },
   });
   return nodes.get(id);
 }
+const sortHeads = ['name', 'category', 'downloads', 'source'].map((by) => {
+  const head = element(`sort-${by}`);
+  head.dataset.sort = by;
+  head.textContent = by === 'name' ? 'Addon' : by[0].toUpperCase() + by.slice(1);
+  return head;
+});
+element('browse-sort').value = 'name';
 const document = {
-  getElementById: element, querySelectorAll: () => [], querySelector: () => element('main'),
+  getElementById: element, querySelectorAll: (selector) => selector === '.sort-head' ? sortHeads : [], querySelector: () => element('main'),
   addEventListener() {}, removeEventListener() {}, activeElement: element('previous'),
 };
 let detailReply;
@@ -77,6 +86,70 @@ assert.equal(run("catalogMatchesType({category:'UI'}, typeFor('bags'))"), false)
 assert.equal(run("catalogMatchesType({category:'UI'}, typeFor(''))"), true);
 assert.equal(run("typeFor('pvp').curse"), 1004);
 run(`settings = null; curse.rows = []; curse.query = '';`);
+// Repeated heading clicks reverse direction; unknown counts stay below real zeroes.
+run(`catalog = [
+  {id:'z',name:'Zulu',category:'Utility',downloads:100,github:'example/z',updated_at:'2026-10-01'},
+  {id:'a',name:'Alpha',category:'Bags',downloads:10,curse:1,updated_at:'2026-11-01'},
+  {id:'b',name:'Beta',category:'Bags',downloads:10,github:'example/b',updated_at:'2026-11-02'},
+  {id:'zero',name:'Zero',category:'UI',downloads:0,wowi:4,updated_at:''},
+  {id:'unknown',name:'Unknown',category:'',downloads:null,updated_at:null}
+];`);
+const sortedNames = () => run('sortedCatalog([...catalog]).map(e => e.name).join()');
+element('sort-downloads').onclick();
+assert.equal(element('browse-sort').value, 'downloads');
+assert.equal(sortedNames(), 'Zulu,Alpha,Beta,Zero,Unknown');
+assert.equal(element('sort-downloads').attributes['data-direction'], 'desc');
+element('sort-downloads').onclick();
+assert.equal(element('browse-sort').value, 'downloads-asc');
+assert.equal(sortedNames(), 'Zero,Alpha,Beta,Zulu,Unknown');
+assert.equal(element('sort-downloads').attributes['data-direction'], 'asc');
+assert.match(element('sort-downloads').attributes['aria-label'], /lowest to highest/);
+element('sort-downloads').onclick();
+assert.equal(element('browse-sort').value, 'downloads');
+element('sort-name').onclick();
+assert.equal(sortedNames(), 'Alpha,Beta,Unknown,Zero,Zulu');
+assert.equal(element('sort-downloads').attributes['data-direction'], undefined);
+element('sort-name').onclick();
+assert.equal(sortedNames(), 'Zulu,Zero,Unknown,Beta,Alpha');
+element('sort-category').onclick();
+assert.equal(sortedNames(), 'Unknown,Alpha,Beta,Zero,Zulu');
+element('sort-category').onclick();
+assert.equal(sortedNames(), 'Zulu,Zero,Alpha,Beta,Unknown');
+element('sort-source').onclick();
+assert.equal(sortedNames(), 'Alpha,Unknown,Beta,Zulu,Zero');
+element('sort-source').onclick();
+assert.equal(sortedNames(), 'Zero,Beta,Zulu,Alpha,Unknown');
+element('browse-sort').value = 'updated-asc';
+element('browse-sort').listeners.change();
+assert.equal(sortedNames(), 'Zulu,Alpha,Beta,Unknown,Zero');
+assert.ok(sortHeads.every(head => head.attributes['data-direction'] === undefined));
+element('browse-sort').value = 'name-desc';
+element('browse-sort').listeners.change();
+assert.equal(element('sort-name').attributes['data-direction'], 'desc');
+element('browse-sort').value = 'downloads-asc';
+const ascendingKey = run('curseParams().key');
+assert.equal(run('curseParams().sort'), 'downloads-asc');
+element('browse-sort').value = 'downloads';
+assert.notEqual(run('curseParams().key'), ascendingKey);
+// Unsupported server sorts keep the same alphabetical page in either direction.
+for (const order of ['category', 'category-desc', 'source', 'source-desc']) {
+  element('browse-sort').value = order;
+  assert.equal(run('curseParams().sort'), 'name');
+}
+run(`settings = {has_curse:true}; curse.rows = [
+  {id:1,name:'Zulu',category:'Bags',downloads:5},
+  {id:2,name:'Alpha',category:'UI',downloads:2}
+]; curse.total = 100; curse.loaded = 50; curse.loading = false;`);
+element('browse-sort').value = 'source-desc';
+run('renderCurseRows()');
+assert.ok(element('curse-list').innerHTML.indexOf('Alpha') < element('curse-list').innerHTML.indexOf('Zulu'));
+element('browse-sort').value = 'category-desc';
+run('renderCurseRows()');
+assert.match(element('curse-status').textContent, /Category order applies to shown results/);
+run('curse.loaded = curse.total; renderCurseRows()');
+assert.equal(element('curse-status').textContent, 'Category order applies to shown results');
+run(`settings = null; curse.rows = []; curse.total = 0; curse.loaded = 0;`);
+element('browse-sort').value = 'name';
 // Source picker: one source is a link, several become a select; Wago ids and locked CurseForge ids never count.
 run(`settings = { has_curse: true };
 catalog = [
@@ -137,6 +210,30 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   finish({summary:'Late response'});
   await loading;
   assert.equal(element('detail-body').innerHTML, before, 'Closed dialogs ignore late responses');
+
+  // Reversing remote results restarts pagination, keeps its direction on more,
+  // and ignores responses that arrive from the previous direction.
+  run(`settings = {has_curse:true}; curse.key = ''; curse.query = ''; curse.loaded = 50; curse.rows = [];`);
+  element('browse-sort').value = 'downloads-asc';
+  invokeReply = () => Promise.resolve({rows:[{id:10,name:'First',downloads:0}],total:100});
+  await run('loadCurse(false)');
+  assert.equal(invokeCalls.at(-1).args.sort, 'downloads-asc');
+  assert.equal(invokeCalls.at(-1).args.index, 0);
+  await run('loadCurse(true)');
+  assert.equal(invokeCalls.at(-1).args.sort, 'downloads-asc');
+  assert.equal(invokeCalls.at(-1).args.index, 1);
+  let finishPreviousSort;
+  element('browse-sort').value = 'downloads';
+  invokeReply = () => new Promise(resolve => { finishPreviousSort = resolve; });
+  const previousSort = run('loadCurse(false)');
+  element('browse-sort').value = 'downloads-asc';
+  invokeReply = () => Promise.resolve({rows:[{id:20,name:'Latest',downloads:1}],total:100});
+  await run('loadCurse(false)');
+  finishPreviousSort({rows:[{id:30,name:'Stale',downloads:100}],total:100});
+  await previousSort;
+  assert.equal(run('curse.rows.map(r => r.id).join()'), '20');
+  run(`settings = null; curse.rows = [];`);
+  element('browse-sort').value = 'name';
 
   // Exercise the actual settings handlers, including pending and failed calls.
   run('settings = { auto_update: false, allow_prerelease: true };');
@@ -206,5 +303,5 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   assert.match(element('toast').textContent, /Could not open backups folder/);
   assert.match(element('toast').className, /bad/);
   run('clearTimeout(toastTimer)');
-  console.log('UI checks passed: counts, eligible updates, filters, search, escaping, empty states, modal focus and cancellation, saved preferences, backups and folder actions.');
+  console.log('UI checks passed: counts, eligible updates, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -459,21 +459,57 @@ $("btn-rescan").onclick = () => rescan();
 $("btn-update-all").onclick = updateAll;
 
 // ---------------------------------------------------------------- browse
+function browseSort() {
+  const [by, order] = ($("browse-sort").value || "name").split("-");
+  return { by, descending: order ? order === "desc" : by === "downloads" || by === "updated" };
+}
+
 function sortedCatalog(rows) {
-  const by = $("browse-sort").value || "name";
+  const { by, descending } = browseSort();
+  const direction = descending ? -1 : 1;
   const name = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
-  if (by === "downloads") return rows.sort((a, b) => (b.downloads || 0) - (a.downloads || 0) || name(a, b));
-  if (by === "updated") return rows.sort((a, b) => String(b.updated_at || "").localeCompare(String(a.updated_at || "")) || name(a, b));
-  if (by === "category") return rows.sort((a, b) => String(a.category || "").localeCompare(String(b.category || ""), undefined, { sensitivity: "base" }) || name(a, b));
-  return rows.sort(name);
+  const source = (e) => installSources(e)[0]?.label || (e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge");
+  return rows.sort((a, b) => {
+    if (by === "name") return direction * name(a, b);
+    let compared;
+    if (by === "downloads" || by === "updated") {
+      const field = by === "downloads" ? "downloads" : "updated_at";
+      const missingA = a[field] == null || a[field] === "";
+      const missingB = b[field] == null || b[field] === "";
+      // Unknown counts/dates stay last in either direction; zero is a known count.
+      if (missingA !== missingB) return missingA ? 1 : -1;
+      compared = by === "downloads" ? (a.downloads || 0) - (b.downloads || 0)
+        : String(a.updated_at || "").localeCompare(String(b.updated_at || ""));
+    } else {
+      const value = (e) => by === "source" ? source(e) : String(e.category || "");
+      compared = value(a).localeCompare(value(b), undefined, { sensitivity: "base" });
+    }
+    return direction * compared || name(a, b);
+  });
+}
+
+function renderSortHeadings() {
+  const { by, descending } = browseSort();
+  document.querySelectorAll(".sort-head").forEach((head) => {
+    const active = head.dataset.sort === by;
+    const defaultDescending = head.dataset.sort === "downloads";
+    const nextDescending = active ? !descending : defaultDescending;
+    const describe = (desc) => head.dataset.sort === "downloads" ? (desc ? "highest to lowest" : "lowest to highest") : (desc ? "Z to A" : "A to Z");
+    head.classList.toggle("active", active);
+    if (active) head.setAttribute("data-direction", descending ? "desc" : "asc");
+    else head.removeAttribute("data-direction");
+    head.setAttribute("aria-label", `${head.textContent.trim()}${active ? `, ${describe(descending)}` : ""}. Sort ${describe(nextDescending)}.`);
+    head.title = `Sort ${describe(nextDescending)}`;
+  });
 }
 
 // Clicking a column heading sorts by it, through the same Sort control.
 document.querySelectorAll(".sort-head").forEach((head) => {
   head.onclick = () => {
-    $("browse-sort").value = head.dataset.sort;
+    const by = head.dataset.sort;
+    const reverse = `${by}-${by === "downloads" ? "asc" : "desc"}`;
+    $("browse-sort").value = browseSort().by === by && $("browse-sort").value !== reverse ? reverse : by;
     renderCatalog();
-    document.querySelectorAll(".sort-head").forEach((h) => h.classList.toggle("active", h === head));
   };
 });
 
@@ -497,6 +533,7 @@ function githubRepoFrom(text) {
 }
 
 function renderCatalog() {
+  renderSortHeadings();
   const q = $("browse-filter").value.trim().toLowerCase();
   const type = typeFor($("browse-cat").value);
   const rows = sortedCatalog(catalog.filter((e) => catalogMatchesType(e, type) && (!q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q))));
@@ -658,15 +695,22 @@ const curse = { key: "", query: "", rows: [], total: 0, loaded: 0, loading: fals
 function curseParams() {
   const q = $("browse-filter").value.trim();
   const type = typeFor($("browse-cat").value);
-  // CurseForge has no category order, so a category sort uses name order there.
-  const by = $("browse-sort").value === "category" ? "name" : $("browse-sort").value || "downloads";
-  return { query: q, sort: by, category: type ? type.curse : null, key: `${q}|${by}|${type ? type.id : ""}` };
+  const { by, descending } = browseSort();
+  // Category names are ordered locally; remote rows all share the same source.
+  // Keep their server pagination alphabetical for these local sorts.
+  const localOrder = by === "category" || by === "source";
+  const field = localOrder ? "name" : by;
+  const reversed = !localOrder && descending !== (field === "downloads" || field === "updated");
+  const sort = reversed ? `${field}-${descending ? "desc" : "asc"}` : field;
+  return { query: q, sort, category: type ? type.curse : null, key: `${q}|${$("browse-sort").value || "name"}|${type ? type.id : ""}` };
 }
 
 function renderCurseRows() {
   const box = $("curse-results");
   if (!settings?.has_curse) return box.classList.add("hidden");
-  $("curse-list").innerHTML = curse.rows
+  // Updated dates are not present on these rows; keep the API's date order.
+  const rows = browseSort().by === "updated" ? curse.rows : sortedCatalog([...curse.rows]);
+  $("curse-list").innerHTML = rows
     .map((r) => {
       const act = r.installed ? '<span class="badge ok">installed</span>'
         : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
@@ -689,6 +733,9 @@ function renderCurseRows() {
       : more
         ? `${curse.rows.length.toLocaleString()} of ${curse.total.toLocaleString()} from CurseForge`
         : "";
+  if (!curse.loading && curse.rows.length && browseSort().by === "category") {
+    $("curse-status").textContent = [$("curse-status").textContent, "Category order applies to shown results"].filter(Boolean).join(" · ");
+  }
   box.classList.toggle("hidden", !curse.rows.length && !curse.loading && !curse.query);
   setBusy(busy);
 }

@@ -68,10 +68,16 @@
       <select id="browse-cat" aria-label="Addon type"><option value="">All types</option></select>
       <label class="lbl" for="browse-sort">Sort</label>
       <select id="browse-sort" aria-label="Sort catalogue">
-        <option value="name">Name</option>
-        <option value="category">Category</option>
+        <option value="name">Name (A–Z)</option>
+        <option value="name-desc">Name (Z–A)</option>
+        <option value="category">Category (A–Z)</option>
+        <option value="category-desc">Category (Z–A)</option>
         <option value="downloads">Most downloaded</option>
+        <option value="downloads-asc">Least downloaded</option>
         <option value="updated">Recently updated</option>
+        <option value="updated-asc">Oldest updated</option>
+        <option value="source">Source (A–Z)</option>
+        <option value="source-desc">Source (Z–A)</option>
       </select>
       <span id="browse-summary" class="count"></span>
       <span class="grow"></span>
@@ -85,7 +91,7 @@
       <button type="button" class="sort-head" data-sort="name">Addon</button>
       <button type="button" class="sort-head" data-sort="category">Category</button>
       <button type="button" class="sort-head" data-sort="downloads">Downloads</button>
-      <span>Source</span><span></span>
+      <button type="button" class="sort-head" data-sort="source">Source</button><span></span>
     </div>
     <div id="browse-list" class="list"></div>
     <div id="curse-results" class="hidden">
