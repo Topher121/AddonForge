@@ -1639,8 +1639,21 @@ fn redact_paths(text: &str) -> String {
 // ---------------------------------------------------------------- boot
 
 fn make_app() -> Shared {
+    let redirects = reqwest::redirect::Policy::custom(|attempt| {
+        let from = attempt.previous().last().and_then(|u| u.host_str().map(str::to_owned));
+        if attempt.previous().len() >= 10 {
+            attempt.error("too many redirects")
+        } else if !sources::curseforge::redirect_keeps_key_home(from.as_deref(), attempt.url().host_str()) {
+            attempt.error("CurseForge redirected away from its API host")
+        } else {
+            attempt.follow()
+        }
+    });
     let client = reqwest::Client::builder()
         .user_agent(USER_AGENT)
+        // Applies to every hop, so a redirect can't downgrade a download to plain http.
+        .https_only(true)
+        .redirect(redirects)
         .timeout(std::time::Duration::from_secs(120))
         .connect_timeout(std::time::Duration::from_secs(15))
         .build()

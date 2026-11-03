@@ -215,6 +215,13 @@ fn request(client: &reqwest::Client, method: reqwest::Method, url: String) -> an
         .timeout(Duration::from_secs(20)))
 }
 
+/// reqwest strips Authorization on a cross-host redirect, but keeps custom headers
+/// like `x-api-key`. A redirect leaving the API host could carry the key with it.
+pub fn redirect_keeps_key_home(from_host: Option<&str>, to_host: Option<&str>) -> bool {
+    const API_HOST: &str = "api.curseforge.com";
+    from_host != Some(API_HOST) || to_host == Some(API_HOST)
+}
+
 fn api_error(status: u16) -> Option<anyhow::Error> {
     match status {
         401 | 403 => Some(anyhow::anyhow!("CurseForge rejected the API key")),
@@ -396,6 +403,15 @@ pub async fn resolve(client: &reqwest::Client, id: u64, prerelease: bool) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_key_never_follows_a_redirect_off_the_api_host() {
+        let api = Some("api.curseforge.com");
+        assert!(redirect_keeps_key_home(api, api));
+        assert!(!redirect_keeps_key_home(api, Some("evil.example")));
+        assert!(!redirect_keeps_key_home(api, None));
+        assert!(redirect_keeps_key_home(Some("github.com"), Some("objects.githubusercontent.com")));
+    }
 
     fn file(id: u64, name: &str, kind: u8, types: &[u64], url: Option<&str>, date: &str) -> FileInfo {
         FileInfo {
