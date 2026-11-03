@@ -997,6 +997,45 @@ $("btn-pick").onclick = async () => {
 $("footer-open-folder").onclick = () => $("btn-open-folder").click();
 $("btn-open-folder").onclick = () => invoke("open_addons_folder").catch((e) => toast(String(e), true));
 $("btn-open-log").onclick = () => invoke("open_log").catch((e) => toast(String(e), true));
+
+async function savePreference(id, field, argument) {
+  const input = $(id);
+  const previous = !!settings?.[field];
+  const value = input.checked;
+  input.disabled = true;
+  try {
+    await invoke("set_prefs", { [argument]: value });
+    if (settings) settings[field] = value;
+    input.checked = value;
+  } catch (err) {
+    input.checked = previous;
+    toast(String(err), true);
+  } finally {
+    input.disabled = false;
+  }
+}
+$("pref-autoupdate").onchange = () => savePreference("pref-autoupdate", "auto_update", "autoUpdate");
+$("pref-prerelease").onchange = () => savePreference("pref-prerelease", "allow_prerelease", "allowPrerelease");
+
+$("btn-backup-wtf").onclick = async () => {
+  if (busy) return;
+  const btn = $("btn-backup-wtf");
+  const label = btn.textContent;
+  setBusy(true);
+  btn.disabled = true;
+  btn.textContent = "Backing up…";
+  try {
+    const backup = await invoke("backup_wtf");
+    toast(`Backed up ${backup.files} file${backup.files === 1 ? "" : "s"} to ${backup.path}`);
+  } catch (err) {
+    toast(String(err), true);
+  } finally {
+    btn.textContent = label;
+    setBusy(false);
+    btn.disabled = false;
+  }
+};
+$("btn-open-backups").onclick = () => invoke("open_backups_folder").catch((e) => toast(String(e), true));
 // ---------------------------------------------------------------- export / import
 $("btn-export").onclick = async () => {
   try {

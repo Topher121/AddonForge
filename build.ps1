@@ -70,8 +70,21 @@ try {
 Push-Location $root
 try {
     $env:ADDONFORGE_BUILD = "$build"   # baked into the exe (selfupdate::build)
-    npx tauri build                    # exe + NSIS installer (bundle targets in tauri.conf.json)
-    if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
+    # Panic locations in dependencies can retain the local account path even
+    # with debug symbols stripped. Remap it before compiling public artifacts.
+    $previousFlags = $env:CARGO_ENCODED_RUSTFLAGS
+    $releaseFlags = @()
+    if ($previousFlags) { $releaseFlags += $previousFlags.Split([char]31) }
+    elseif ($env:RUSTFLAGS) { $releaseFlags += ($env:RUSTFLAGS -split '\s+' | Where-Object { $_ }) }
+    $profilePath = [Environment]::GetFolderPath('UserProfile')
+    if (-not $profilePath) { throw "Cannot locate the build profile for private-path remapping" }
+    $releaseFlags += "--remap-path-prefix=$profilePath=C:\build-user"
+    $releaseFlags += "--remap-path-prefix=$($profilePath.Replace('\', '/'))=C:/build-user"
+    $env:CARGO_ENCODED_RUSTFLAGS = $releaseFlags -join [char]31
+    try {
+        npx tauri build                # exe + NSIS installer (bundle targets in tauri.conf.json)
+        if ($LASTEXITCODE -ne 0) { throw "tauri build failed" }
+    } finally { $env:CARGO_ENCODED_RUSTFLAGS = $previousFlags }
 } finally { Pop-Location }
 
 $exe = Join-Path $tauri "target\release\addonforge.exe"
