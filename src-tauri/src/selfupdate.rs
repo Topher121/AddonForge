@@ -178,8 +178,7 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         std::fs::rename(&current, &old)?;
         if let Err(e) = std::fs::rename(&tmp, &target) {
             // Put things back rather than leave the app with no exe.
-            let _ = std::fs::rename(&old, &current);
-            return Err(e.into());
+            return Err(restore_after_staging_failure(&old, &current, e));
         }
     }
     crate::logi!(
@@ -221,6 +220,21 @@ pub async fn apply(client: &reqwest::Client, latest: &Latest) -> anyhow::Result<
         });
     }
     Ok(target)
+}
+
+/// A failed move of the downloaded exe can leave the installed copy renamed
+/// aside. Retry putting it back and report the actual recovery outcome.
+fn restore_after_staging_failure(old: &Path, current: &Path, cause: std::io::Error) -> anyhow::Error {
+    match retry_io(|| std::fs::rename(old, current)) {
+        Ok(()) => anyhow::anyhow!("the update could not be installed ({cause}), so the previous version was restored"),
+        Err(e) => {
+            crate::loge!("self-update: staging failed: {cause}; rollback failed: {e}");
+            anyhow::anyhow!(
+                "the update could not be installed ({cause}) and the previous version could not be put back ({e}). \
+                 Reinstall AddonForge from the releases page; your addons are not affected."
+            )
+        }
+    }
 }
 
 /// Put the previous copy back after a failed launch. Portable: the old file was
@@ -372,7 +386,7 @@ mod leftover_tests {
 
 #[cfg(test)]
 mod rollback_tests {
-    use super::restore_previous;
+    use super::{restore_after_staging_failure, restore_previous};
     use std::fs;
     use std::path::PathBuf;
 
@@ -406,6 +420,35 @@ mod rollback_tests {
         restore_previous(&target, &old, &old, true).unwrap();
         assert!(!target.exists());
         assert_eq!(fs::read_to_string(&old).unwrap(), "old build");
+    }
+
+    #[test]
+    fn failed_staging_restores_the_installed_exe_and_reports_recovery() {
+        let dir = scratch("staging-restored");
+        let current = dir.join("AddonForge.exe");
+        let old = dir.join("AddonForge.exe.old");
+        fs::write(&old, "old build").unwrap();
+        // A removed/quarantined staged download cannot be moved into place.
+        let cause = fs::rename(dir.join("missing.part"), &current).unwrap_err();
+        let error = restore_after_staging_failure(&old, &current, cause).to_string();
+        assert!(error.contains("previous version was restored"));
+        assert_eq!(fs::read_to_string(&current).unwrap(), "old build");
+        assert!(!old.exists());
+    }
+
+    #[test]
+    fn failed_staging_with_obstructed_restore_preserves_fallback_and_reports_failure() {
+        let dir = scratch("staging-obstructed");
+        let current = dir.join("AddonForge.exe");
+        let old = dir.join("AddonForge.exe.old");
+        fs::write(&old, "old build").unwrap();
+        fs::create_dir(&current).unwrap();
+        let cause = fs::rename(dir.join("missing.part"), &current).unwrap_err();
+        let error = restore_after_staging_failure(&old, &current, cause).to_string();
+        assert!(error.contains("previous version could not be put back"));
+        assert!(error.contains("Reinstall AddonForge"));
+        assert_eq!(fs::read_to_string(&old).unwrap(), "old build");
+        assert!(current.is_dir());
     }
 }
 

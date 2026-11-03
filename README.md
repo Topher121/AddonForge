@@ -7,7 +7,7 @@ A small, fast addon manager for **World of Warcraft: Forever**.
 - `AddonForge-Setup-…exe`: installs to your user folder with a Start menu shortcut and an uninstaller. No admin rights needed.
 - `AddonForge-v…exe`: portable, run it from anywhere, nothing installed.
 
-Either one updates itself when a new build is out. Windows may show "Windows protected your PC" the first time because the files aren't code-signed yet: click *More info*, then *Run anyway*.
+Either one updates itself when a new build is out. The Windows files are not code-signed yet, so SmartScreen may show an unknown-publisher warning. A Defender malware detection is a separate issue: if Defender blocks a file, report the build number and detection name; do not disable antivirus or add an exclusion.
 
 ![AddonForge showing installed addons with update status](docs/screenshot.png)
 
@@ -90,7 +90,9 @@ Want an addon listed? See [CONTRIBUTING.md](CONTRIBUTING.md): one JSON entry and
 
 ## Code signing policy
 
-Code signing: applied for with SignPath Foundation (free for open source). Until it is approved, the Windows files are not signed, as described in the download notes above. Once approved, releases will be signed with a certificate issued by SignPath Foundation.
+The Windows files do not currently have a code-signing certificate. SignPath Foundation declined the initial application and invited a later reapplication as the project gains recognition.
+
+From build 27, AddonForge verifies a project signature on its update manifest and checks the downloaded executable against the manifest's SHA-256 checksum. This protects update authenticity and integrity; it is separate from Windows publisher signing.
 
 **Roles**
 - Authors, reviewers and approvers: [Project maintainer](https://github.com/Topher121/AddonForge) (sole maintainer).

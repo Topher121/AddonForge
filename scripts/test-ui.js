@@ -17,8 +17,14 @@ const document = {
   addEventListener() {}, removeEventListener() {}, activeElement: element('previous'),
 };
 let detailReply;
+let invokeReply = () => Promise.resolve();
+const invokeCalls = [];
 const context = vm.createContext({
-  document, window: { __TAURI__: { core: { invoke(command) { if (command === "addon_details") return detailReply; } }, opener: {} } },
+  document, window: { __TAURI__: { core: { invoke(command, args) {
+    invokeCalls.push({ command, args });
+    if (command === "addon_details") return detailReply;
+    return invokeReply(command, args);
+  } }, opener: {} } },
   setTimeout, clearTimeout, console,
 });
 const source = fs.readFileSync('ui/app.js', 'utf8').split('// ---------------------------------------------------------------- boot')[0];
@@ -131,5 +137,74 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   finish({summary:'Late response'});
   await loading;
   assert.equal(element('detail-body').innerHTML, before, 'Closed dialogs ignore late responses');
-  console.log('UI checks passed: counts, eligible updates, filters, search, escaping, empty states, modal focus and cancellation.');
+
+  // Exercise the actual settings handlers, including pending and failed calls.
+  run('settings = { auto_update: false, allow_prerelease: true };');
+  element('pref-autoupdate').checked = true;
+  let finishPreference;
+  invokeReply = () => new Promise(resolve => { finishPreference = resolve; });
+  const savingPreference = element('pref-autoupdate').onchange();
+  assert.equal(element('pref-autoupdate').disabled, true, 'Preference waits for persistence');
+  assert.equal(invokeCalls.at(-1).command, 'set_prefs');
+  assert.equal(invokeCalls.at(-1).args.autoUpdate, true);
+  assert.deepEqual(Object.keys(invokeCalls.at(-1).args), ['autoUpdate'], 'Only the changed preference is sent');
+  finishPreference();
+  await savingPreference;
+  assert.equal(run('settings.auto_update'), true);
+  assert.equal(element('pref-autoupdate').disabled, false);
+
+  element('pref-autoupdate').checked = false;
+  invokeReply = () => Promise.reject(new Error('Preference write failed'));
+  await element('pref-autoupdate').onchange();
+  assert.equal(element('pref-autoupdate').checked, true, 'Failed save restores the saved checkbox value');
+  assert.equal(run('settings.auto_update'), true, 'Failed save does not change the saved preference');
+  assert.equal(element('pref-autoupdate').disabled, false);
+  assert.match(element('toast').textContent, /Preference write failed/);
+  assert.match(element('toast').className, /bad/);
+
+  element('pref-prerelease').checked = false;
+  invokeReply = () => Promise.resolve();
+  await element('pref-prerelease').onchange();
+  assert.equal(invokeCalls.at(-1).command, 'set_prefs');
+  assert.equal(invokeCalls.at(-1).args.allowPrerelease, false);
+  assert.deepEqual(Object.keys(invokeCalls.at(-1).args), ['allowPrerelease']);
+  assert.equal(run('settings.allow_prerelease'), false);
+  invokeReply = () => Promise.resolve({ version: '0.4.0', build: 28, auto_update: true, allow_prerelease: false });
+  await run('loadSettings()');
+  assert.equal(element('pref-autoupdate').checked, true, 'Saved auto-update preference survives settings reload');
+  assert.equal(element('pref-prerelease').checked, false);
+
+  element('btn-backup-wtf').textContent = 'Back up the WTF folder';
+  let finishBackup;
+  invokeReply = () => new Promise(resolve => { finishBackup = resolve; });
+  const startingBackup = element('btn-backup-wtf').onclick();
+  assert.equal(invokeCalls.at(-1).command, 'backup_wtf');
+  assert.equal(element('btn-backup-wtf').disabled, true);
+  assert.equal(element('btn-backup-wtf').textContent, 'Backing up…');
+  const callsWhileBackingUp = invokeCalls.length;
+  await element('btn-backup-wtf').onclick();
+  assert.equal(invokeCalls.length, callsWhileBackingUp, 'A second click cannot start a second backup');
+  finishBackup({ files: 2, bytes: 100, path: 'QA/WTF-synthetic.zip' });
+  await startingBackup;
+  assert.match(element('toast').textContent, /Backed up 2 files to QA\/WTF-synthetic\.zip/);
+  assert.equal(element('btn-backup-wtf').disabled, false);
+  assert.equal(element('btn-backup-wtf').textContent, 'Back up the WTF folder');
+
+  invokeReply = () => Promise.reject(new Error('No WTF folder in the game folder yet'));
+  await element('btn-backup-wtf').onclick();
+  assert.match(element('toast').textContent, /No WTF folder/);
+  assert.match(element('toast').className, /bad/);
+  assert.equal(element('btn-backup-wtf').disabled, false);
+  assert.equal(run('busy'), false, 'A failed backup releases the interface');
+  assert.equal(element('btn-backup-wtf').textContent, 'Back up the WTF folder');
+
+  invokeReply = () => Promise.resolve('QA/backups');
+  await element('btn-open-backups').onclick();
+  assert.equal(invokeCalls.at(-1).command, 'open_backups_folder');
+  invokeReply = () => Promise.reject(new Error('Could not open backups folder'));
+  await element('btn-open-backups').onclick();
+  assert.match(element('toast').textContent, /Could not open backups folder/);
+  assert.match(element('toast').className, /bad/);
+  run('clearTimeout(toastTimer)');
+  console.log('UI checks passed: counts, eligible updates, filters, search, escaping, empty states, modal focus and cancellation, saved preferences, backups and folder actions.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
