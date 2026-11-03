@@ -98,7 +98,8 @@ pub fn local_icon(install: &Path, texture: &str) -> Option<String> {
 
 /// Fetch an https image (GitHub avatar or a catalogue `icon` URL), cached for 30 days.
 pub async fn remote_icon(client: &reqwest::Client, url: &str) -> Option<String> {
-    if !url.starts_with("https://") {
+    // The catalogue is fetched live, so its `icon` field gets the same limit as README images.
+    if !allowed_image_host(url) {
         return None;
     }
     let cache = cache_dir().join(format!("{}.png", key(url)));
@@ -142,11 +143,13 @@ const README_TTL: Duration = Duration::from_secs(24 * 3600);
 /// Hosts an image may come from for the preview. The app promises to talk
 /// only to the addon sites, so anything else in a README is ignored.
 fn allowed_image_host(url: &str) -> bool {
-    let rest = match url.strip_prefix("https://") {
-        Some(r) => r,
-        None => return false,
-    };
-    let host = rest.split('/').next().unwrap_or("").to_ascii_lowercase();
+    // A real URL parse: `https://evil.example?.wago.io/a.png` has the host evil.example.
+    let Ok(parsed) = reqwest::Url::parse(url) else { return false };
+    if parsed.scheme() != "https" || !parsed.username().is_empty() || parsed.password().is_some() {
+        return false;
+    }
+    let Some(host) = parsed.host_str() else { return false };
+    let host = host.to_ascii_lowercase();
     host == "github.com"
         || host.ends_with(".githubusercontent.com")
         || host == "media.forgecdn.net"
@@ -543,6 +546,26 @@ pub async fn preview_image(client: &reqwest::Client, url: &str) -> Option<String
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn image_hosts_are_read_from_the_parsed_url() {
+        assert!(allowed_image_host("https://github.com/owner.png?size=64"));
+        assert!(allowed_image_host("https://avatars.githubusercontent.com/u/1"));
+        assert!(allowed_image_host("https://media.forgecdn.net/a.png"));
+        for url in [
+            "https://evil.example/a.png",
+            "http://github.com/owner.png",
+            "https://evil.example?.githubusercontent.com/a.png",
+            "https://evil.example#.wago.io/a.png",
+            "https://evil.example\\.wago.io/a.png",
+            "https://github.com@evil.example/a.png",
+            "https://user:pass@github.com/a.png",
+            "https://github.com.evil.example/a.png",
+            "not a url",
+        ] {
+            assert!(!allowed_image_host(url), "{url}");
+        }
+    }
 
     #[test]
     fn release_notes_are_plain_and_short() {

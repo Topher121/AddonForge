@@ -42,6 +42,7 @@ An entry looks like this:
 | `desc`, `category`, `url` | no | shown in Browse |
 | `notice` | no | one short line (160 chars) shown in amber on the installed row. For "remove this once X is fixed" situations. |
 | `added` | no | `YYYY-MM-DD` the entry was added. Kept for the record and for sorting later. |
+| `icon` | no | https image for Browse, on GitHub, `media.forgecdn.net`, Wago or WoWInterface. Other hosts are refused. Leave it out to use the GitHub avatar. |
 
 Set `group_required_dependencies: true` only when the download bundles the
 first folder's required dependencies, as Questie does with QuestieDB. Keep those
