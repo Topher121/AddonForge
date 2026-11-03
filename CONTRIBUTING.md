@@ -36,7 +36,7 @@ An entry looks like this:
 | `wago` | one source | Wago Addons project id. Users need their own Wago key, which Wago only gives to Patreon supporters, so prefer a GitHub source where one exists. |
 | `wowi` | one source | WoWInterface file id. |
 | `tukui` | one source | TukUI slug (`elvui`, `tukui`). |
-| `curse` | no | CurseForge project id. Link only, never downloaded. An entry with only `curse` is a link-only entry so people know where the addon lives. |
+| `curse` | no | CurseForge project id. Release builds can install from it unless `curse_locked` says the author opted out; other builds treat it as a link. |
 | `asset_hint` | no | substring that picks the right zip when a release has several and no `release.json`, e.g. `"-forever"`. |
 | `forever` | no | `true` if the author ships a Forever build (interface 16001), `false` if not yet, leave out if unsure. Be honest: `true` suppresses the "not for Forever" warning. |
 | `desc`, `category`, `url` | no | shown in Browse |
@@ -62,7 +62,7 @@ Rules:
 
 ## Code changes
 
-Rust core in `src-tauri/`, plain HTML/JS in `ui/`. `cargo test` must pass. Keep the promises in the README: no accounts, no ads, no analytics, no server of ours in the loop, and no CurseForge API key in the exe.
+Rust core in `src-tauri/`, plain HTML/JS in `ui/`. `cargo test` must pass. Keep the promises in the README: no accounts, no ads, no analytics, no server of ours in the loop, and the CurseForge API key stays out of the repo and goes only to api.curseforge.com.
 
 Headless mode is the quickest way to test without the window:
 

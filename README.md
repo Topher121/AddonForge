@@ -12,7 +12,7 @@ Either one updates itself when a new build is out. The Windows files are not cod
 ![AddonForge showing installed addons with update status](docs/screenshot.png)
 
 - **Light.** A single exe on top of the WebView2 that Windows already has. No bundled browser.
-- **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI, CurseForge), the same way your browser would.
+- **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI, CurseForge), plus this project's GitHub repo for the catalogue and updates. The full list is under [Privacy](#code-signing-policy).
 - **Honest.** If an addon's author only allows downloads through CurseForge's own app, AddonForge says so and gives you the link instead of pretending.
 
 ## How it finds addons
@@ -33,9 +33,9 @@ On top of that there is a **catalogue**: [`catalog/forever.json`](catalog/foreve
 - Pin an addon to hold it at its current version. Ignore one to hide it.
 - Optional pre-release toggle for authors who only ship Forever builds as betas.
 - Export your addon list to a small file, import it on another PC or send it to a friend.
-- Refuses any zip that contains an executable. Addons are Lua, XML and media, nothing else.
+- Refuses any zip containing a known executable or script type, or a file that starts like a Windows or macOS program or a script. Addons are Lua, XML and media, and AddonForge never runs anything from a zip.
 - Updates itself: a banner appears when a new build is out, one click swaps the exe.
-- "Report a problem" builds a diagnostics report you can read, then opens a GitHub issue or an email. Nothing leaves your PC until you press send.
+- "Report a problem" builds a diagnostics report and opens a GitHub issue form or an email with it filled in. The GitHub form gets the report in its URL, so GitHub receives the text when the page opens, though nothing is posted until you submit. Email leaves when you press send. "Copy diagnostics" shows the report without sending anything.
 - Keeps a small local log next to its settings file, never uploaded.
 
 ## How it's built
@@ -50,7 +50,7 @@ Honest version: AddonForge is designed, tested and decided by one person with a 
 | Wago Addons | Link only | Wago gives updater keys to its Patreon supporters only, so AddonForge no longer installs from Wago. Entries that live only there link to their Wago page. |
 | WoWInterface | No | Public JSON API. |
 | TukUI | No | ElvUI / Tukui. |
-| CurseForge | Built in | Search all Forever addons on CurseForge and install the ones whose authors allow third-party downloads (about seven in ten of the popular ones). The API key ships inside release builds, is only ever sent to api.curseforge.com, and nothing from CurseForge is written to disk. Opted-out addons are link only. |
+| CurseForge | Built in | Search all Forever addons on CurseForge and install the ones whose authors allow third-party downloads (about seven in ten of the popular ones). The API key ships inside release builds and is only ever sent to api.curseforge.com. API responses aren't cached on disk; the only CurseForge data AddonForge keeps is the project id and version name of what you installed, in its settings and log. Opted-out addons are link only. |
 
 ## Build
 
@@ -106,9 +106,11 @@ AddonForge does not collect or send personal data and has no telemetry, accounts
 - api.curseforge.com and edge.forgecdn.net: CurseForge addon lookups and downloads (only for addons whose authors allow third-party downloads).
 - api.mmoui.com: WoWInterface addon lookups and the download hosts it returns.
 - api.tukui.org: TukUI addon lookups and the download hosts it returns.
-- addons.wago.io: only for addons first installed from Wago before build 25.
+- media.forgecdn.net, wago.io hosts, www.wowinterface.com and cdn-wow.mmoui.com: only for the preview image, when the first screenshot in a GitHub-hosted addon's README lives there.
 
-These requests reveal your IP address and the addon names or IDs being checked, as with any web request. The CurseForge API key is sent only to api.curseforge.com.
+Every request is HTTPS, and a site can redirect it to another host (GitHub's downloads do). At launch the app reads the catalogue, download totals and its own update manifest from this repo, then checks your installed addons for updates; there's no setting to turn that off.
+
+These requests reveal your IP address, your AddonForge version (in the User-Agent) and the addon names or IDs being checked, as with any web request. GitHub counts downloads of release files, so the update manifest's counter gives the maintainer a rough, anonymous count of launches. The CurseForge API key is sent only to api.curseforge.com.
 
 **Scope of signing**
 Only AddonForge's own release builds are signed, and only from source in this repository. Addons installed through AddonForge are made by their own authors and are not signed by this project.

@@ -889,7 +889,10 @@ async fn install_from(
     if not_forever && !allow_non_forever && vouched != Some(true) {
         return Err("NOT_FOREVER".into());
     }
-    logi!("install {key} from {} {} -> {}", src.label(), remote.version, remote.download_url);
+    // CurseForge's download links stay out of the log: nothing from its API but the
+    // installed version is kept on disk.
+    let shown_url = if matches!(src, Source::Curse(_)) { "(CurseForge download)" } else { remote.download_url.as_str() };
+    logi!("install {key} from {} {} -> {shown_url}", src.label(), remote.version);
     // Staged outside the addons folder: the install lock and recovery never touch it.
     let tmp = state::AppState::dir().join("downloads");
     let zip = install::download(&app.client, &remote.download_url, &tmp, &remote.filename)

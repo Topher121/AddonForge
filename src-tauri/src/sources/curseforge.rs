@@ -2,9 +2,9 @@
 //!
 //! The API key is baked into release builds (see `build.rs`); builds without
 //! one have CurseForge switched off and every function here says so. Rules we
-//! keep because their terms ask for them: nothing from the API is written to
-//! disk (the only cache is in memory for a few minutes), there is no relay
-//! server, authors who disallow third-party distribution are never downloaded
+//! keep because their terms ask for them: API responses are not cached on disk
+//! (the only cache is in memory for a few minutes; settings and the log keep just
+//! the project id and version name of an install), there is no relay server, authors who disallow third-party distribution are never downloaded
 //! around (they stay link-only), and calls are kept to a minimum (one batch
 //! request per update check, one request per search).
 
