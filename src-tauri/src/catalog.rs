@@ -66,6 +66,12 @@ pub struct CatalogEntry {
     /// Date the entry was added (YYYY-MM-DD). Feeds "New in the catalogue".
     #[serde(default)]
     pub added: Option<String>,
+    /// Earlier `owner/repo` names for `github`, for when the author renamed or
+    /// moved the repo. A saved install still pointing at one of these follows
+    /// `github` instead, so nobody who later registers the old name can ship
+    /// updates to people who installed before the move.
+    #[serde(default)]
+    pub github_moved_from: Vec<String>,
 }
 
 /// A hand-picked set of addons shown as "Starter picks" in Browse.

@@ -100,6 +100,15 @@ fn pick_source(
     // package once installed from Wago falls through to any other source.
     if let Some(m) = managed {
         if let Some(s) = Source::from_parts(&m.source, &m.source_id) {
+            // The author moved the repo: follow the catalogue's current name, so
+            // whoever registers the old name cannot ship updates to this install.
+            if let (Source::Github(saved), Some(e)) = (&s, entry) {
+                if let Some(current) = &e.github {
+                    if e.github_moved_from.iter().any(|old| old.eq_ignore_ascii_case(saved)) {
+                        return Some(Source::Github(current.clone()));
+                    }
+                }
+            }
             if !matches!(s, Source::Wago(_)) {
                 return Some(s);
             }
@@ -2603,5 +2612,42 @@ mod redact_tests {
         let out = redact_paths(text);
         assert!(!out.contains("SomeOne"), "{out}");
         assert!(out.contains("<user>"));
+    }
+}
+
+#[cfg(test)]
+mod moved_repo_tests {
+    use super::*;
+
+    fn entry() -> CatalogEntry {
+        CatalogEntry {
+            id: "easyfind".into(),
+            name: "EasyFind".into(),
+            github: Some("fallenguards/EasyFind".into()),
+            github_moved_from: vec!["wowaddonmaker/EasyFind".into()],
+            ..Default::default()
+        }
+    }
+
+    fn saved(repo: &str) -> Installed {
+        Installed { source: "github".into(), source_id: repo.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn a_saved_install_on_a_moved_repo_follows_the_catalogue() {
+        let e = entry();
+        let src = pick_source(Some(&e), &AddonFolder::default(), Some(&saved("wowaddonmaker/EasyFind")));
+        assert!(matches!(src, Some(Source::Github(r)) if r == "fallenguards/EasyFind"));
+        // The old name matches whatever its case.
+        let src = pick_source(Some(&e), &AddonFolder::default(), Some(&saved("WowAddonMaker/easyfind")));
+        assert!(matches!(src, Some(Source::Github(r)) if r == "fallenguards/EasyFind"));
+    }
+
+    #[test]
+    fn a_repo_the_user_chose_is_still_kept() {
+        let e = entry();
+        // A fork the user installed from a link is not a moved name, so it stays.
+        let src = pick_source(Some(&e), &AddonFolder::default(), Some(&saved("someone/EasyFind-fork")));
+        assert!(matches!(src, Some(Source::Github(r)) if r == "someone/EasyFind-fork"));
     }
 }

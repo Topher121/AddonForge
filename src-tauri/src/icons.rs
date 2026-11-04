@@ -66,7 +66,21 @@ pub fn resolve_texture(install: &Path, texture: &str) -> Option<PathBuf> {
     let lower = t.to_ascii_lowercase();
     let rel = lower.strip_prefix("interface\\addons\\")?;
     let rel = &t[t.len() - rel.len()..]; // original case, same offset
-    let base = install.join("Interface").join("AddOns").join(rel.replace('\\', "/"));
+    // The TOC is written by the addon's author, so the path is built one plain
+    // folder name at a time. An empty part (`\\server\share`), `.` or `..`, or a
+    // drive letter is refused before anything touches the disk or the network:
+    // on Windows a joined absolute or UNC path would replace the AddOns folder.
+    let addons = install.join("Interface").join("AddOns");
+    let mut base = addons.clone();
+    for part in rel.split('\\') {
+        if part.is_empty() || part == "." || part == ".." || part.contains(':') {
+            return None;
+        }
+        base.push(part);
+    }
+    if !base.starts_with(&addons) {
+        return None;
+    }
     if base.is_file() {
         return Some(base);
     }
@@ -611,3 +625,47 @@ pub(crate) async fn read_capped(mut resp: reqwest::Response, limit: usize) -> an
 
 }
 
+#[cfg(test)]
+mod texture_tests {
+    use super::resolve_texture;
+    use std::fs;
+    use std::path::PathBuf;
+
+    fn install(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("af-texture-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("Interface").join("AddOns").join("Foo")).unwrap();
+        fs::write(dir.join("Interface").join("AddOns").join("Foo").join("icon.tga"), b"x").unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_normal_icon_inside_the_addon_resolves() {
+        let dir = install("normal");
+        let found = resolve_texture(&dir, r"Interface\AddOns\Foo\icon").unwrap();
+        assert!(found.ends_with("icon.tga"));
+        assert!(resolve_texture(&dir, "Interface/AddOns/Foo/icon.tga").is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn network_shares_are_refused_before_any_lookup() {
+        let dir = install("unc");
+        // Three backslashes after AddOns leave `\\host\share`, a network path.
+        assert!(resolve_texture(&dir, r"Interface\AddOns\\\host.example\share\icon.png").is_none());
+        assert!(resolve_texture(&dir, "Interface/AddOns///host.example/share/icon.png").is_none());
+        assert!(resolve_texture(&dir, r"Interface\AddOns\\\127.0.0.1\C$\Windows\win.ini").is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn paths_that_leave_the_addons_folder_are_refused() {
+        let dir = install("escape");
+        fs::write(dir.join("secret.tga"), b"x").unwrap();
+        assert!(resolve_texture(&dir, r"Interface\AddOns\..\..\secret").is_none());
+        assert!(resolve_texture(&dir, r"Interface\AddOns\Foo\..\..\..\secret.tga").is_none());
+        assert!(resolve_texture(&dir, r"Interface\AddOns\C:\Windows\win.ini").is_none());
+        assert!(resolve_texture(&dir, r"Interface\AddOns\Foo\.\icon").is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+}
