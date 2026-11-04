@@ -1,6 +1,6 @@
 {
   "flavor": "forever",
-  "updated": "2026-10-28",
+  "updated": "2026-11-04",
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, when the entry was listed). Top-level: bundles (starter packs). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
@@ -179,7 +179,10 @@
       "name": "ClassicUI Forever",
       "desc": "Makes the Forever UI look and feel like classic WoW.",
       "category": "UI",
-      "github": "wowaddonmaker/classicuiforever",
+      "github": "fallenguards/classicuiforever",
+      "github_moved_from": [
+        "wowaddonmaker/classicuiforever"
+      ],
       "curse": 1700043,
       "folders": [
         "ClassicUIForever"
@@ -191,7 +194,10 @@
       "name": "EasyFind",
       "desc": "Search anything in the UI: settings, spells, items, guides.",
       "category": "Utility",
-      "github": "wowaddonmaker/EasyFind",
+      "github": "fallenguards/EasyFind",
+      "github_moved_from": [
+        "wowaddonmaker/EasyFind"
+      ],
       "curse": 1454793,
       "folders": [
         "EasyFind",

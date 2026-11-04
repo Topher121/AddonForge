@@ -24,7 +24,7 @@ const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
-const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "group_required_dependencies", "curse_locked", "url", "forever", "icon", "notice", "added"]);
+const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "group_required_dependencies", "curse_locked", "url", "forever", "icon", "notice", "added", "github_moved_from"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
   const where = `addons[${i}]${a && a.id ? ` (${a.id})` : ""}`;
@@ -40,6 +40,11 @@ for (const [i, a] of (cat.addons || []).entries()) {
   if (a.desc !== undefined && typeof a.desc !== "string") problems.push(`${where}: "desc" must be a string`);
   if (a.github !== undefined && (typeof a.github !== "string" || !repoRe.test(a.github))) problems.push(`${where}: "github" must be owner/repo`);
   if (a.github && /^(curseforge-mirror|hippuli)\//i.test(a.github)) problems.push(`${where}: unauthorised mirror repos are not accepted`);
+  if (a.github_moved_from !== undefined) {
+    if (!Array.isArray(a.github_moved_from) || !a.github_moved_from.every((r) => typeof r === "string" && repoRe.test(r))) problems.push(`${where}: "github_moved_from" must be a list of owner/repo`);
+    else if (!a.github) problems.push(`${where}: "github_moved_from" needs a current "github"`);
+    else if (a.github_moved_from.some((r) => r.toLowerCase() === a.github.toLowerCase())) problems.push(`${where}: "github_moved_from" must not include the current repo`);
+  }
   if (a.wago !== undefined && (typeof a.wago !== "string" || !/^[A-Za-z0-9]{6,12}$/.test(a.wago))) problems.push(`${where}: "wago" must be the Wago project id`);
   if (a.wowi !== undefined && !Number.isInteger(a.wowi)) problems.push(`${where}: "wowi" must be an integer id`);
   if (a.curse !== undefined && !Number.isInteger(a.curse)) problems.push(`${where}: "curse" must be an integer id`);
