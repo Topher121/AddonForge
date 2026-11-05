@@ -80,7 +80,6 @@ input::placeholder { color: var(--dim); }
 
 /* table */
 .thead, .item { display: grid; align-items: center; gap: 0 12px; padding: 0 8px; }
-.cols-installed, #installed-list .item { grid-template-columns: minmax(0, 1.5fr) 140px minmax(0, 1fr) 150px 118px; }
 #curse-list .item { grid-template-columns: minmax(0, 2fr) 110px 100px minmax(0, 1.2fr) 90px; }
 .more { display: flex; align-items: center; gap: 12px; padding: 10px 0; min-height: 20px; }
 .cols-browse, #browse-list .item { grid-template-columns: minmax(0, 2fr) 110px 100px minmax(0, 1.2fr) 90px; }
@@ -98,13 +97,10 @@ input::placeholder { color: var(--dim); }
 .flags { color: var(--dim); font-size: 11px; margin-left: 6px; }
 .flags .badge { margin-right: 2px; }
 .sub-line { color: var(--dim); font-size: 11px; margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-ver { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.c-ver b { color: var(--text); font-weight: 500; }
-.c-ver .arrow { color: var(--accent); margin: 0 3px; }
 .c-src { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .c-src a { color: var(--muted); }
 .c-src a:hover { color: var(--accent-2); }
-.c-status { font-size: 12px; white-space: nowrap; }
+.c-status { font-size: 12px; }
 .c-dl { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; }
 .c-dl b { color: var(--text); font-weight: 500; }
 select { background: var(--bg); color: var(--text); border: 1px solid var(--line-2); border-radius: 4px; padding: 4px 6px; font: inherit; font-size: 12px; }
@@ -225,9 +221,6 @@ select { background: var(--bg); color: var(--text); border: 1px solid var(--line
 ::-webkit-scrollbar-thumb { background: var(--line-2); border: 3px solid var(--bg); border-radius: 6px; }
 
 @media (max-width: 860px) {
-  .cols-installed { display: none; }
-  #installed-list .item { grid-template-columns: 1fr auto; }
-  #installed-list .c-ver, #installed-list .c-src, #installed-list .c-status { grid-column: 1; font-size: 11px; }
   .cols-browse { display: none; }
   #browse-list .item { grid-template-columns: 1fr auto; }
   #browse-list .c-cat, #browse-list .c-src, #browse-list .c-dl { grid-column: 1; font-size: 11px; }
@@ -265,7 +258,7 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .attention-count { font-size:11px; }
 .addon-table { border:1px solid var(--line); border-radius:3px; }
 .thead,.item { gap:0 12px; padding-left:14px; padding-right:14px; }
-.cols-installed,#installed-list .item { grid-template-columns:minmax(160px,2fr) minmax(68px,.7fr) minmax(68px,.7fr) minmax(70px,.8fr) minmax(112px,1fr) 104px; }
+.cols-installed,#installed-list .item { grid-template-columns:minmax(0,1fr) clamp(80px,14vw,150px) clamp(112px,17vw,180px) 104px; }
 .thead { background:#222221; padding-top:9px; padding-bottom:9px; color:#c0beb6; font-size:12px; }
 .item { min-height:57px; padding-top:8px; padding-bottom:8px; }
 .item:last-child { border-bottom:0; }
@@ -277,7 +270,6 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .addon-detail { background:none; padding:0; border:0; color:inherit; text-align:left; font:inherit; font-weight:600; }
 .addon-detail:hover { color:var(--accent-2); }
 .sub-line { margin-top:3px; }
-.c-ver { font-size:12px; }
 .c-src a { color:var(--text); }
 .badge { font-size:11px; }
 .badge.update { font-weight:400; }
@@ -296,9 +288,9 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .toast { bottom:46px; }
 .pref { padding:20px 0; }
 .bundle { padding:15px; }
-@media(max-width:1000px) { .installed-toolbar { gap:7px; } .installed-toolbar input[type=search] { width:180px; } #installed-view { max-width:150px; } .cols-installed,#installed-list .item { grid-template-columns:minmax(155px,1.5fr) 72px 72px 75px 112px 100px; gap:0 8px; } .attention-count { display:none; } }
-@media(max-width:860px) { .cols-installed { display:grid; } #installed-list .c-ver,#installed-list .c-src,#installed-list .c-status { grid-column:auto; } .cols-installed,#installed-list .item { grid-template-columns:minmax(145px,1fr) 64px 64px 65px 105px 94px; gap:0 6px; padding-left:9px; padding-right:9px; } .top { padding:0 20px; height:36px; } .name { font-size:21px; } main { padding-left:14px; padding-right:14px; } .installed-toolbar .grow { display:none; } .installed-toolbar input[type=search] { flex:1; } }
-@media(max-width:700px) { .addon-table { overflow-x:auto; } .cols-installed,#installed-list { min-width:665px; } .tabs { gap:14px; } .game-settings { font-size:11px; } }
+@media(max-width:1000px) { .installed-toolbar { gap:7px; } .installed-toolbar input[type=search] { width:180px; } #installed-view { max-width:150px; } .attention-count { display:none; } }
+@media(max-width:860px) { .cols-installed,#installed-list .item { gap:0 6px; padding-left:9px; padding-right:9px; } .top { padding:0 20px; height:36px; } .name { font-size:21px; } main { padding-left:14px; padding-right:14px; } .installed-toolbar .grow { display:none; } .installed-toolbar input[type=search] { flex:1; } }
+@media(max-width:700px) { .addon-table { overflow-x:auto; } .cols-installed,#installed-list { min-width:460px; } .tabs { gap:14px; } .game-settings { font-size:11px; } }
 
 /* One search bar on Find addons (build 20): GitHub offer row, source picker, CurseForge section */
 .offer { display:flex; align-items:center; gap:12px; padding:8px 10px; margin:0 0 10px; border:1px solid var(--line-2); border-radius:3px; font-size:12px; color:var(--muted); }
@@ -312,9 +304,9 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .detail-body .notes pre { margin: 0; color: var(--muted); font: inherit; font-size: 12px; line-height: 1.5; white-space: pre-wrap; max-height: 150px; overflow: auto; padding-right: 6px; }
 .detail-body .notes.first { margin: 0 0 10px; }
 
-/* Clickable column headings on Find addons: look like the plain labels. */
-.thead .sort-head { all: unset; cursor: pointer; font: inherit; color: inherit; }
-.thead .sort-head:hover, .thead .sort-head:focus-visible { color: var(--accent, #e8a24a); text-decoration: underline; }
-.thead .sort-head.active { color: var(--accent, #e8a24a); }
-.thead .sort-head[data-direction="asc"]::after { content: " ↑"; }
-.thead .sort-head[data-direction="desc"]::after { content: " ↓"; }
+/* Sortable column headings share the plain-label styling. */
+.thead :is(.sort-head, .installed-sort-head) { all: unset; cursor: pointer; font: inherit; color: inherit; }
+.thead :is(.sort-head, .installed-sort-head):is(:hover, :focus-visible) { color: var(--accent, #e8a24a); text-decoration: underline; }
+.thead :is(.sort-head, .installed-sort-head).active { color: var(--accent, #e8a24a); }
+.thead :is(.sort-head, .installed-sort-head)[data-direction="asc"]::after { content: " ↑"; }
+.thead :is(.sort-head, .installed-sort-head)[data-direction="desc"]::after { content: " ↓"; }

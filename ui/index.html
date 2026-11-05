@@ -39,7 +39,7 @@
   <section id="tab-installed" class="panel active">
     <div class="toolbar installed-toolbar">
       <input id="installed-filter" type="search" placeholder="Search addons" aria-label="Search installed addons">
-      <select id="installed-view" aria-label="Filter addons"><option value="all">All addons</option><option value="updates">Updates available</option><option value="attention">Needs attention</option></select>
+      <select id="installed-view" aria-label="Filter addons"><option value="all">All addons</option><option value="updates">Updates</option><option value="attention">Needs attention</option></select>
       <span class="grow"></span>
       <button id="btn-rescan" class="btn" title="Read the AddOns folder again">Rescan</button>
       <button id="btn-check" class="btn">Check for updates</button>
@@ -54,8 +54,11 @@
     </div>
     <div id="svfix-note" class="tool-note hidden">ForeverSVFix is set up on this install. After installing or updating an addon, run Apply / Refresh in ForeverSVFix before you launch WoW, or that addon's settings won't load.</div>
     <div class="addon-table">
-      <div class="thead cols-installed" aria-hidden="true">
-        <span>Addon</span><span>Installed</span><span>Available</span><span>Source</span><span>Status</span><span></span>
+      <div class="thead cols-installed">
+        <button type="button" class="installed-sort-head" data-sort="name" aria-label="Addon. Sort A to Z." title="Sort A to Z">Addon</button>
+        <button type="button" class="installed-sort-head" data-sort="source" aria-label="Source. Sort A to Z." title="Sort A to Z">Source</button>
+        <button type="button" class="installed-sort-head active" data-sort="status" data-direction="asc" aria-label="Status, highest priority first. Sort lowest priority first." title="Sort lowest priority first">Status</button>
+        <span></span>
       </div>
       <div id="installed-list" class="list"></div>
     </div>

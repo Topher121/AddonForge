@@ -1327,7 +1327,8 @@
       "wago": "qv634BKb",
       "curse": 334372,
       "folders": [
-        "Questie"
+        "Questie",
+        "QuestieDB"
       ],
       "url": "https://github.com/Questie/Questie",
       "forever": true,

@@ -12,9 +12,12 @@ let busy = false;
 let settings = null;
 let selfUpdate = null;
 let activeFilter = "all";
+let installedSort = { by: "status", descending: false };
 let bundles = [];
 const icons = new Map(); // "p:<package key>" / "c:<catalogue id>" -> data URL, or null when there is none
 const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.missing_deps.length > 0 || !p.supports_forever;
+const failedUpdate = (p) => p.status === "error" && p.updateFailed;
+const byAddonName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
 // ---------------------------------------------------------------- helpers
 function iconTile(kind, id, name) {
@@ -152,7 +155,7 @@ function badge(p) {
   const map = {
     ok: "Up to date",
     update: "Update available",
-    error: "Error",
+    error: failedUpdate(p) ? "Update failed" : "Error",
     "curse-only": "CurseForge only",
     "no-source": "No source",
     "no-key": "Needs Wago key",
@@ -162,13 +165,65 @@ function badge(p) {
   return `<span class="badge ${p.status}">${p.status === "checking" ? '<span class="spinner"></span> ' : ""}${map[p.status] || p.status}</span>`;
 }
 
+const installedStatusOrder = { error: 0, update: 1, checking: 2, unknown: 3, ok: 4, "curse-only": 5, "no-key": 6, "no-source": 7 };
+const installedStatusRank = (p) => p.status === "update" && p.pinned ? 8 : installedStatusOrder[p.status] ?? 8;
+
+function installedSourceLabel(p) {
+  return (p.source_label || (p.source_url ? (p.curse_id ? "CurseForge" : "link") : "")).split(" · ")[0];
+}
+
+const installedSortHeads = document.querySelectorAll(".installed-sort-head");
+function renderInstalledSortHeadings() {
+  for (const head of installedSortHeads) {
+    const by = head.dataset.sort;
+    const active = installedSort.by === by;
+    const describe = (descending) => by === "status"
+      ? (descending ? "lowest priority first" : "highest priority first")
+      : (descending ? "Z to A" : "A to Z");
+    const next = describe(active && !installedSort.descending);
+    head.classList.toggle("active", active);
+    if (active) head.setAttribute("data-direction", installedSort.descending ? "desc" : "asc");
+    else head.removeAttribute("data-direction");
+    head.setAttribute("aria-label", `${head.textContent.trim()}${active ? `, ${describe(installedSort.descending)}` : ""}. Sort ${next}.`);
+    head.title = `Sort ${next}`;
+  }
+}
+
+for (const head of installedSortHeads) {
+  head.onclick = () => {
+    const by = head.dataset.sort;
+    installedSort = { by, descending: installedSort.by === by && !installedSort.descending };
+    renderInstalled();
+  };
+}
+
 function visiblePackages() {
   const q = $("installed-filter").value.trim().toLowerCase();
   const showIgnored = $("show-ignored").checked;
-  return packages.filter((p) => (showIgnored || !p.ignored) && (activeFilter === "all" || (activeFilter === "updates" ? p.status === "update" : needsAttention(p))) && (!q || `${p.name} ${p.folders.join(" ")} ${p.author || ""} ${p.source_label}`.toLowerCase().includes(q)));
+  const { by, descending } = installedSort;
+  const direction = descending ? -1 : 1;
+  return packages
+    .filter((p) => {
+      if (p.ignored && !showIgnored) return false;
+      if (activeFilter === "updates" && p.status !== "update" && !failedUpdate(p)) return false;
+      if (activeFilter === "attention" && !needsAttention(p)) return false;
+      return !q || `${p.name} ${p.folders.join(" ")} ${p.author || ""} ${p.source_label}`.toLowerCase().includes(q);
+    })
+    .sort((a, b) => {
+      if (by === "name") return direction * byAddonName(a, b);
+      if (by === "source") {
+        const sourceA = installedSourceLabel(a);
+        const sourceB = installedSourceLabel(b);
+        if (!sourceA !== !sourceB) return sourceA ? -1 : 1;
+        return direction * sourceA.localeCompare(sourceB, undefined, { sensitivity: "base" }) || byAddonName(a, b);
+      }
+      if (!!a.ignored !== !!b.ignored) return a.ignored ? 1 : -1;
+      return direction * (installedStatusRank(a) - installedStatusRank(b)) || byAddonName(a, b);
+    });
 }
 
 function renderInstalled() {
+  renderInstalledSortHeadings();
   const list = $("installed-list");
   const rows = visiblePackages();
   $("stat-total").textContent = packages.length;
@@ -188,18 +243,18 @@ function renderInstalled() {
   list.innerHTML = rows.length
     ? rows
         .map((p) => {
-          const ver = p.installed_version ? `<b>${esc(p.installed_version)}</b>` : `<span class="muted">unknown</span>`;
-          const remote = p.remote_version ? `${esc(p.remote_version)}${p.remote_prerelease ? ' <span class="badge pre">beta</span>' : ""}` : "—";
           const flags = [
             p.supports_forever ? "" : `<span class="badge not-forever" title="No 16001 interface or _Forever toc found">not for Forever</span>`,
             p.pinned ? `<span class="badge pinned" title="Updates held back">pinned</span>` : "",
             p.ignored ? `<span class="badge managed">ignored</span>` : "",
           ].filter(Boolean).join(" ");
+          const sourceLabel = installedSourceLabel(p);
           const src = p.source_url
-            ? `<a href="#" data-url="${esc(p.source_url)}">${esc((p.source_label || (p.curse_id ? "CurseForge" : "link")).split(" · ")[0])}</a>`
-            : `<span class="muted">${esc(p.source_label || "—")}</span>`;
+            ? `<a href="#" data-url="${esc(p.source_url)}">${esc(sourceLabel)}</a>`
+            : `<span class="muted">${esc(sourceLabel || "—")}</span>`;
           const canUpdate = p.source && p.status !== "no-key";
-          const btnLabel = p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
+          const retry = failedUpdate(p);
+          const btnLabel = retry ? "Retry" : p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
           const noteCls = p.status === "error" ? "note err" : "note";
           const notice = p.notice ? `<div class="note warn">${esc(p.notice)}</div>` : "";
           const deps = p.missing_deps.length
@@ -211,12 +266,10 @@ function renderInstalled() {
           const sub = esc(entry?.category || p.author || `${p.folders.length} folder${p.folders.length === 1 ? "" : "s"}`);
           return `<div class="item ${p.ignored ? "ignored" : ""} ${p.status === "no-source" || p.status === "curse-only" ? "dim" : ""}" data-key="${esc(p.key)}">
         <div class="c-name">${iconTile("p", p.key, p.name)}<div class="nm-wrap"><button class="nm addon-detail" data-package-detail="${esc(p.key)}" aria-haspopup="dialog" title="View addon details">${esc(p.name)}</button>${flags ? `<span class="flags">${flags}</span>` : ""}${sub ? `<div class="sub-line">${sub}</div>` : ""}</div></div>
-        <div class="c-ver" title="Installed version">${ver}</div>
-        <div class="c-ver available" title="Available version">${remote}</div>
         <div class="c-src">${src}</div>
-        <div class="c-status">${badge(p)}</div>
+        <div class="c-status">${badge(p)}${p.remote_prerelease && p.status === "update" ? ' <span class="badge pre">beta</span>' : ""}</div>
         <div class="c-act">
-          ${canUpdate && p.status === "update" && !p.pinned ? `<button class="btn small primary" data-act="update">Update</button>` : ""}
+          ${canUpdate && (p.status === "update" || retry) && !p.pinned ? `<button class="btn small primary" data-act="update">${btnLabel}</button>` : ""}
           <details class="more-actions"><summary aria-label="Options for ${esc(p.name)}" title="Addon options">···</summary><div class="action-menu">
           ${canUpdate ? `<button class="btn small" data-act="update">${btnLabel}</button>` : ""}
           <button class="btn small" data-act="pin" title="${p.pinned ? "Allow updates again" : "Hold this addon at its current version"}">${p.pinned ? "Allow updates" : "Pin version"}</button>
@@ -328,11 +381,14 @@ $("installed-list").addEventListener("click", async (e) => {
 function explainError(err) {
   const s = String(err);
   if (s.startsWith("SAFETY:")) return s.replace("SAFETY: refused, ", "Refused for safety: ");
+  const conflict = s.match(/^cannot replace addon folder (.+?): it belongs to [^\r\n]+$/);
+  if (conflict) return `The ${conflict[1]} folder is treated as a separate addon, so AddonForge left it in place.`;
   return s;
 }
 
 async function updateOne(p, allowNonForever = false) {
   setBusy(true);
+  delete p.updateFailed;
   p.status = "checking";
   renderInstalled();
   try {
@@ -351,8 +407,9 @@ async function updateOne(p, allowNonForever = false) {
       return "skipped";
     }
     p.status = "error";
+    p.updateFailed = true;
     p.note = explainError(err);
-    toast(explainError(err), true);
+    toast(`${p.name} failed to update. ${p.note}`, true);
     return "failed";
   } finally {
     setBusy(false);
@@ -360,7 +417,7 @@ async function updateOne(p, allowNonForever = false) {
   }
 }
 
-/// keepStatus: re-scan but keep remote versions we already know.
+/// keepStatus: re-scan but keep remote versions and failed updates we already know.
 async function rescan(keepStatus = false) {
   setBusy(true);
   try {
@@ -368,13 +425,14 @@ async function rescan(keepStatus = false) {
     if (keepStatus) {
       for (const f of fresh) {
         const old = packages.find((x) => x.key === f.key);
-        if (old && old.remote_version) {
+        if (old && (old.remote_version || old.updateFailed)) {
           f.remote_version = old.remote_version;
           f.remote_forever = old.remote_forever;
           f.remote_prerelease = old.remote_prerelease;
           f.update_available = old.update_available;
           f.status = old.status;
           f.note = old.note;
+          f.updateFailed = old.updateFailed;
         }
       }
     }
@@ -417,9 +475,19 @@ async function updateAll() {
   const todo = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored);
   if (!todo.length) return;
   const counts = { updated: 0, failed: 0, skipped: 0 };
-  for (const p of todo) counts[(await updateOne(p)) || "failed"] += 1;
+  const failedNames = [];
+  for (const p of todo) {
+    const result = (await updateOne(p)) || "failed";
+    counts[result] += 1;
+    if (result === "failed") failedNames.push(p.name);
+  }
+  if (counts.updated) await rescan(true);
   const parts = [`${counts.updated} updated`];
-  if (counts.failed) parts.push(`${counts.failed} failed`);
+  if (counts.failed) {
+    const named = failedNames.slice(0, 3).join(", ");
+    const remaining = failedNames.length - 3;
+    parts.push(`${counts.failed} failed (${named}${remaining > 0 ? ` and ${remaining} more` : ""})`);
+  }
   if (counts.skipped) parts.push(`${counts.skipped} skipped`);
   toast(parts.join(", "), counts.failed > 0);
 }
@@ -467,10 +535,9 @@ function browseSort() {
 function sortedCatalog(rows) {
   const { by, descending } = browseSort();
   const direction = descending ? -1 : 1;
-  const name = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
   const source = (e) => installSources(e)[0]?.label || (e.wago ? "Wago" : e.wowi ? "WoWInterface" : e.tukui ? "TukUI" : "CurseForge");
   return rows.sort((a, b) => {
-    if (by === "name") return direction * name(a, b);
+    if (by === "name") return direction * byAddonName(a, b);
     let compared;
     if (by === "downloads" || by === "updated") {
       const field = by === "downloads" ? "downloads" : "updated_at";
@@ -484,7 +551,7 @@ function sortedCatalog(rows) {
       const value = (e) => by === "source" ? source(e) : String(e.category || "");
       compared = value(a).localeCompare(value(b), undefined, { sensitivity: "base" });
     }
-    return direction * compared || name(a, b);
+    return direction * compared || byAddonName(a, b);
   });
 }
 
@@ -612,7 +679,8 @@ async function openDetail(id, installedPackage = null) {
   $("detail-icon").dataset.ico = iconKey; // filled in by loadIcons if it arrives later
   $("detail-name").textContent = e.name;
   const bits = [e.category, installedPackage?.source_label || (entry ? sourceLabel(e) : "No update source")];
-  if (installedPackage?.installed_version) bits.push(`Installed: ${installedPackage.installed_version}`);
+  if (installedPackage?.installed_version) bits.push(`Installed ${installedPackage.installed_version}`);
+  if (installedPackage?.remote_version) bits.push(`Available ${installedPackage.remote_version}${installedPackage.remote_prerelease ? " (beta)" : ""}`);
   if (e.downloads != null) bits.push(`${fmtCount(e.downloads)} downloads`);
   if (e.updated_at) bits.push(ago(e.updated_at));
   $("detail-meta").innerHTML = bits.filter(Boolean).map(esc).join(" \u00b7 ") +

@@ -14,15 +14,19 @@ function element(id) {
   });
   return nodes.get(id);
 }
-const sortHeads = ['name', 'category', 'downloads', 'source'].map((by) => {
-  const head = element(`sort-${by}`);
+const makeSortHeads = (prefix, fields) => fields.map((by) => {
+  const head = element(`${prefix}-${by}`);
   head.dataset.sort = by;
   head.textContent = by === 'name' ? 'Addon' : by[0].toUpperCase() + by.slice(1);
   return head;
 });
+const sortHeads = makeSortHeads('sort', ['name', 'category', 'downloads', 'source']);
+const installedSortHeads = makeSortHeads('installed-sort', ['name', 'source', 'status']);
 element('browse-sort').value = 'name';
 const document = {
-  getElementById: element, querySelectorAll: (selector) => selector === '.sort-head' ? sortHeads : [], querySelector: () => element('main'),
+  getElementById: element,
+  querySelectorAll: (selector) => ({ '.sort-head': sortHeads, '.installed-sort-head': installedSortHeads })[selector] || [],
+  querySelector: () => element('main'),
   addEventListener() {}, removeEventListener() {}, activeElement: element('previous'),
 };
 let detailReply;
@@ -42,14 +46,15 @@ const run = (code) => vm.runInContext(code, context);
 run(`packages = [
   {key:'a',name:'Alpha <addon>',folders:['Alpha'],author:'Ada',source_label:'GitHub',source:true,status:'update',supports_forever:true,missing_deps:[],installed_version:'1',remote_version:'2'},
   {key:'b',name:'Beta',folders:['Beta'],source_label:'Wago',status:'no-key',supports_forever:true,missing_deps:[]},
-  {key:'c',name:'Gamma',folders:['Gamma'],source_label:'GitHub',status:'ok',supports_forever:true,missing_deps:[],ignored:true},
-  {key:'d',name:'Delta',folders:['Delta'],source_label:'GitHub',source:true,status:'update',supports_forever:true,missing_deps:[],pinned:true}
+  {key:'c',name:'Gamma',folders:['Gamma'],source_label:'',status:'ok',supports_forever:true,missing_deps:[],ignored:true},
+  {key:'d',name:'Delta',folders:['Delta'],source_label:'CurseForge',source:true,status:'update',supports_forever:true,missing_deps:[],pinned:true}
 ]; renderInstalled();`);
 assert.equal(String(element('stat-total').textContent), '4');
 assert.equal(String(element('stat-updates').textContent), '2');
 assert.equal(String(element('stat-attention').textContent), '1');
 assert.equal(element('btn-update-all').textContent, 'Update all (1)');
 assert.match(element('installed-list').innerHTML, /Alpha &lt;addon&gt;/);
+assert.doesNotMatch(element('installed-list').innerHTML, /c-ver|Installed version|Available version/);
 run(`packages[0].notice = 'Beta workaround <b>'; renderInstalled();`);
 assert.match(element('installed-list').innerHTML, /note warn">Beta workaround &lt;b&gt;/);
 run(`delete packages[0].notice; renderInstalled();`);
@@ -64,6 +69,26 @@ assert.match(element('installed-list').innerHTML, /Show all addons/);
 element('installed-filter').value = '';
 element('show-ignored').checked = true;
 assert.equal(run('visiblePackages().length'), 4);
+const installedKeys = () => run('visiblePackages().map(p => p.key).join()');
+assert.equal(element('installed-sort-status').attributes['data-direction'], 'asc');
+element('installed-sort-name').onclick();
+assert.equal(installedKeys(), 'a,b,d,c');
+element('installed-sort-name').onclick();
+assert.equal(installedKeys(), 'c,d,b,a');
+assert.equal(element('installed-sort-name').attributes['data-direction'], 'desc');
+element('installed-sort-source').onclick();
+assert.equal(installedKeys(), 'd,a,b,c');
+element('installed-sort-source').onclick();
+assert.equal(installedKeys(), 'b,a,d,c', 'Unknown source stays last in either direction');
+element('installed-filter').value = 'Ada';
+assert.equal(installedKeys(), 'a');
+element('installed-filter').value = '';
+element('installed-sort-status').onclick();
+assert.equal(installedKeys(), 'a,b,d,c');
+element('installed-sort-status').onclick();
+assert.equal(installedKeys(), 'd,b,a,c');
+element('installed-sort-status').onclick();
+assert.match(element('installed-sort-status').attributes['aria-label'], /highest priority first/);
 // CurseForge rows: installable, opted-out (link only), already installed; status line and paging button.
 run(`settings = { has_curse: true };
 curse.rows = [
@@ -190,9 +215,9 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   assert.equal(document.activeElement, originalFocus);
   run(`catalog = [{ id:'boss', name:'Boss', github:'example/boss', desc:'Boss timers', installed:true }];`);
   detailReply = Promise.resolve({summary:'Release description', image:'data:image/png;base64,test'});
-  await run(`openDetail('boss', {key:'boss-local',name:'Boss',folders:['Boss'],installed_version:'2'})`);
+  await run(`openDetail('boss', {key:'boss-local',name:'Boss',folders:['Boss'],installed_version:'2',remote_version:'3',remote_prerelease:true})`);
   assert.equal(element('detail-desc').textContent, 'Boss timers');
-  assert.match(element('detail-meta').innerHTML, /Installed: 2/);
+  assert.match(element('detail-meta').innerHTML, /Installed 2.*Available 3 \(beta\)/);
   assert.match(element('detail-body').innerHTML, /Release description/);
   assert.match(element('detail-body').innerHTML, /class="shot"/);
   run('closeDetail()');
@@ -210,6 +235,48 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   finish({summary:'Late response'});
   await loading;
   assert.equal(element('detail-body').innerHTML, before, 'Closed dialogs ignore late responses');
+
+  // Actionable updates move up without changing the order within each group.
+  const addon = (key, name, status, flags = {}) => ({
+    key, name, status, folders: [name], source: true, source_label: 'GitHub',
+    supports_forever: true, missing_deps: [], installed_version: '1', ...flags,
+  });
+  const batch = [
+    addon('normal', 'Alpha', 'ok'),
+    addon('pinned', 'Bravo', 'update', { pinned: true, remote_version: '2' }),
+    addon('updated', 'Charlie', 'update'),
+    addon('ignored', 'Delta', 'update', { ignored: true, remote_version: '2' }),
+    addon('failed', 'Zulu', 'update'),
+  ];
+  context.batch = batch.map(p => ({ ...p }));
+  element('show-ignored').checked = false;
+  run(`activeFilter = 'all'; packages = batch; renderInstalled();`);
+  assert.equal(run(`visiblePackages().map(p => p.key).join()`), 'updated,failed,normal,pinned');
+  const batchStart = invokeCalls.length;
+  invokeReply = (command, args) => {
+    if (command === 'update_package') {
+      if (args.key === 'failed') return Promise.reject('cannot replace addon folder QuestieDB: it belongs to folder:QuestieDB');
+      return Promise.resolve({ ...batch[2], status: 'ok', installed_version: '2', remote_version: '2' });
+    }
+    if (command === 'scan') return Promise.resolve(batch.map(p => ({ ...p, status: 'unknown', installed_version: p.key === 'updated' ? '2' : '1' })));
+    return Promise.resolve({});
+  };
+  await run('updateAll()');
+  assert.deepEqual(invokeCalls.slice(batchStart).filter(c => c.command === 'update_package').map(c => c.args.key), ['updated', 'failed']);
+  assert.ok(invokeCalls.slice(batchStart).some(c => c.command === 'scan'), 'A successful batch item refreshes related rows');
+  assert.equal(installedKeys(), 'failed,normal,updated,pinned');
+  assert.match(element('toast').textContent, /1 updated, 1 failed \(Zulu\)/);
+  assert.match(element('installed-list').innerHTML, /Update failed/);
+  assert.match(element('installed-list').innerHTML, /The QuestieDB folder is treated as a separate addon/);
+  assert.doesNotMatch(element('installed-list').innerHTML, /folder:QuestieDB/);
+  element('show-ignored').checked = true;
+  assert.equal(installedKeys(), 'failed,normal,updated,pinned,ignored');
+  element('show-ignored').checked = false;
+  assert.equal(run(`activeFilter = 'updates'; visiblePackages().map(p => p.key).join()`), 'failed,pinned', 'Updates filter keeps the failed row and the pinned update after refresh');
+  invokeReply = () => Promise.resolve({ ...batch[4], status: 'ok', installed_version: '2' });
+  await run(`updateOne(packages.find(p => p.key === 'failed'))`);
+  assert.equal(run(`visiblePackages().some(p => p.key === 'failed')`), false, 'Successful retry clears the failure');
+  run(`activeFilter = 'all'; packages = []; renderInstalled();`);
 
   // Reversing remote results restarts pagination, keeps its direction on more,
   // and ignores responses that arrive from the previous direction.
@@ -303,5 +370,5 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   assert.match(element('toast').textContent, /Could not open backups folder/);
   assert.match(element('toast').className, /bad/);
   run('clearTimeout(toastTimer)');
-  console.log('UI checks passed: counts, eligible updates, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions.');
+  console.log('UI checks passed: counts, eligible updates, failure priority and retry, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

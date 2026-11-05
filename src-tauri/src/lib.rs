@@ -60,6 +60,9 @@ pub struct Package {
     pub name: String,
     pub folders: Vec<String>,
     pub installed_version: Option<String>,
+    /// A manually installed Questie and QuestieDB pair in GitHub bundle format.
+    #[serde(skip)]
+    installed_bundle_version: Option<String>,
     pub author: Option<String>,
     pub notes: Option<String>,
     pub source: Option<Source>,
@@ -179,20 +182,31 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
 
     // First pass: direct keys (managed / catalogue / ids / standalone).
     let direct_key = |f: &AddonFolder| -> (String, Option<&CatalogEntry>) {
+        let folder_name = f.folder.to_ascii_lowercase();
+        let managed_owner = managed_folder.get(&folder_name).copied();
+        let questie_db = f.folder.eq_ignore_ascii_case("QuestieDB");
+        let questie_owner = managed_folder.get("questie").copied().unwrap_or("cat:questie");
         let cat_entry = by_folder
-            .get(&f.folder.to_ascii_lowercase())
+            .get(&folder_name)
             .copied()
+            // QuestieDB can be installed separately. Group only when Questie is present
+            // and no other package owns the database folder.
+            .filter(|e| e.id != "questie" || !questie_db || (
+                on_disk.contains_key("questie") && managed_owner.unwrap_or(questie_owner) == questie_owner
+            ))
             .or_else(|| f.wago.as_deref().and_then(|w| by_wago.get(w).copied()))
             .or_else(|| f.curse.and_then(|c| by_curse.get(&c).copied()))
             .or_else(|| f.wowi.and_then(|i| by_wowi.get(&i).copied()));
-        if let Some(k) = managed_folder.get(&f.folder.to_ascii_lowercase()) {
+        if let Some(k) = managed_owner {
             let entry = k
                 .strip_prefix("cat:")
                 .and_then(|id| cat.addons.iter().find(|e| e.id == id))
                 .or(cat_entry);
-            return ((*k).to_string(), entry);
+            return (k.to_string(), entry);
         }
-        let key = if let Some(e) = cat_entry {
+        let key = if questie_db && cat_entry.is_some_and(|e| e.id == "questie") {
+            questie_owner.to_string()
+        } else if let Some(e) = cat_entry {
             format!("cat:{}", e.id)
         } else if let Some(w) = &f.wago {
             format!("wago:{w}")
@@ -339,6 +353,18 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             .filter(|v| !v.is_empty() && !v.starts_with('@'));
         let source = pick_source(entry, primary, managed)
             .or_else(|| fs.iter().find_map(|f| pick_source(None, f, None)));
+        let installed_bundle_version = if managed.is_none()
+            && primary.folder.eq_ignore_ascii_case("Questie")
+            && matches!(&source, Some(Source::Github(repo)) if repo.eq_ignore_ascii_case("Questie/Questie"))
+        {
+            let database_version = fs.iter().find(|f| f.folder.eq_ignore_ascii_case("QuestieDB"))
+                .and_then(|f| f.version.as_deref());
+            primary.version.as_deref().zip(database_version).map(|(questie, database)| {
+                format!("Questie-v{}+v{}", normalize_version(questie), normalize_version(database))
+            })
+        } else {
+            None
+        };
         let curse_id = entry.and_then(|e| e.curse).or_else(|| fs.iter().find_map(|f| f.curse));
         let supports_forever = fs.iter().any(|f| f.supports_forever());
 
@@ -383,6 +409,7 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             name,
             folders: folder_names,
             installed_version,
+            installed_bundle_version,
             author: primary.author.clone(),
             notes: entry.map(|e| e.desc.clone()).filter(|d| !d.is_empty()).or_else(|| primary.notes.clone()),
             source_label: source.as_ref().map(|s| s.label()).unwrap_or_default(),
@@ -488,8 +515,9 @@ fn apply_remote(pkg: &mut Package, mut remote: Remote, vouched: Option<bool>) {
     if remote.forever == Some(false) && vouched == Some(true) {
         remote.forever = None;
     }
-    let same = pkg.installed_version.as_deref()
-        .map(|v| normalize_version(v) == normalize_version(&remote.version)).unwrap_or(false);
+    let available = normalize_version(&remote.version);
+    let same = [pkg.installed_version.as_deref(), pkg.installed_bundle_version.as_deref()]
+        .into_iter().flatten().any(|v| normalize_version(v) == available);
     pkg.update_available = !same;
     pkg.status = if same { "ok".into() } else { "update".into() };
     pkg.note = match remote.forever {
@@ -2277,6 +2305,53 @@ mod tests {
                 assert_eq!(checked.remote_version.as_deref(), Some(version));
             }
         }
+    }
+
+    #[test]
+    fn questie_bundle_checks_both_manual_versions_and_preserves_ownership() {
+        let catalog = catalog::bundled();
+        let mut questie = folder("Questie", &[], None);
+        questie.version = Some("12.6.0".into());
+        let mut database = folder("QuestieDB", &[], None);
+        database.version = Some("1.0.10".into());
+        let mut state = AppState::default();
+        let folders = [database, questie];
+
+        let packages = build_packages(&state, &catalog, &folders);
+        assert_eq!(packages.len(), 1);
+        let mut package = packages.into_iter().next().unwrap();
+        assert_eq!(package.key, "cat:questie");
+        assert_eq!(package.folders, ["Questie", "QuestieDB"]);
+        assert_eq!(package.installed_version.as_deref(), Some("12.6.0"));
+        apply_remote(&mut package, remote("Questie-v12.6.0+v1.0.10"), None);
+        assert_eq!(package.status, "ok");
+        apply_remote(&mut package, remote("Questie-v12.6.0+v1.0.11"), None);
+        assert_eq!(package.status, "update");
+
+        let packages = build_packages(&state, &catalog, &folders[..1]);
+        assert_eq!(packages[0].key, "folder:QuestieDB");
+
+        let legacy_key = "github:questie/questie";
+        state.installed.insert(legacy_key.into(), Installed {
+            source: "github".into(), source_id: "Questie/Questie".into(),
+            version: "Questie-v12.6.0+v1.0.10".into(),
+            folders: vec!["Questie".into()], ..Default::default()
+        });
+        let packages = build_packages(&state, &catalog, &folders);
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].key, legacy_key);
+        assert!(!protected_package_folders(&state, &packages, legacy_key).contains_key("questiedb"));
+
+        let db_key = "github:questie/questiedb";
+        state.installed.insert(db_key.into(), Installed {
+            source: "github".into(), source_id: "Questie/QuestieDB".into(),
+            folders: vec!["QuestieDB".into()], ..Default::default()
+        });
+        let packages = build_packages(&state, &catalog, &folders);
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages.iter().find(|p| p.key == db_key).unwrap().name, "QuestieDB");
+        let protected = protected_package_folders(&state, &packages, legacy_key);
+        assert_eq!(protected.get("questiedb").map(String::as_str), Some(db_key));
     }
 
     #[test]
