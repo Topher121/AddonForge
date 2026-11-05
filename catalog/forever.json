@@ -1,6 +1,6 @@
 {
   "flavor": "forever",
-  "updated": "2026-11-04",
+  "updated": "2026-11-05",
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, when the entry was listed). Top-level: bundles (starter packs). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
@@ -837,8 +837,8 @@
     {
       "id": "svshim",
       "name": "SVShim (SavedVariables shim)",
-      "desc": "Forever beta workaround for saved variables not loading. Link only: its download includes a script file, which AddonForge never installs.",
-      "notice": "Beta workaround. Remove it once Blizzard fixes saved variables; this line will say when.",
+      "desc": "Retired workaround for loading saved addon settings on older Forever beta clients.",
+      "notice": "The author confirmed that Forever loads saved settings again and archived SVShim. See the project page for removal instructions.",
       "category": "Utility",
       "url": "https://github.com/kylef000/wow-forever-svshim",
       "folders": [
@@ -1307,7 +1307,7 @@
     {
       "id": "elvui",
       "name": "ElvUI",
-      "desc": "Full UI replacement. No Forever build yet: TukUI lists 12.1.0 / 5.5.4 / 1.15.9 / 2.5.6 only. Will install here the moment they add 1.60.",
+      "desc": "Full UI replacement with an official Forever build from TukUI.",
       "category": "UI",
       "tukui": "elvui",
       "folders": [
@@ -1316,12 +1316,12 @@
         "ElvUI_Options"
       ],
       "url": "https://tukui.org/elvui",
-      "forever": false
+      "forever": true
     },
     {
       "id": "questie",
       "name": "Questie",
-      "desc": "Quest helper. Forever support is still an open pull request; the CurseForge 'Questie Forever' port is separate.",
+      "desc": "Quest helper with official WoW: Forever support. The GitHub bundle includes QuestieDB.",
       "category": "Quests",
       "github": "Questie/Questie",
       "wago": "qv634BKb",
@@ -1330,20 +1330,20 @@
         "Questie"
       ],
       "url": "https://github.com/Questie/Questie",
-      "forever": false,
+      "forever": true,
       "group_required_dependencies": true
     },
     {
       "id": "details",
       "name": "Details! Damage Meter",
-      "desc": "No Forever build: Forever ships its own damage meter and blocks the data.",
+      "desc": "Combat analysis and damage meter with an official Forever release on CurseForge.",
       "category": "Combat",
       "curse": 61284,
       "folders": [
         "Details"
       ],
-      "url": "https://github.com/Tercioo/Details-Damage-Meter",
-      "forever": false,
+      "url": "https://www.curseforge.com/wow/addons/details",
+      "forever": true,
       "curse_locked": true,
       "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
     },
@@ -1373,6 +1373,7 @@
         "Prat-3.0_Libraries"
       ],
       "url": "https://github.com/Legacy-of-Sylvanaar/prat-3-0",
+      "forever": true,
       "added": "2026-09-24"
     },
     {
@@ -1385,6 +1386,7 @@
         "BlizzMove"
       ],
       "url": "https://github.com/Kiatra/BlizzMove",
+      "forever": true,
       "added": "2026-09-24"
     },
     {
@@ -1392,16 +1394,15 @@
       "name": "GatherLite",
       "desc": "Gathering history on the map and minimap: herbs, ore, fish and more.",
       "category": "Professions",
-      "github": "Wuild/GatherLite",
       "wago": "O67jQPN3",
       "curse": 334918,
       "folders": [
         "GatherLite"
       ],
-      "url": "https://github.com/Wuild/GatherLite",
-      "forever": false,
+      "url": "https://www.curseforge.com/wow/addons/gatherlite",
+      "forever": true,
       "added": "2026-10-23",
-      "notice": "GitHub's latest release (7.6.3) is the old multi-version build. The Forever version is on CurseForge or Wago until the author tags a new GitHub release."
+      "notice": "The current Forever build is on CurseForge. Reinstall from CurseForge to switch an older GitHub install to the current source."
     }
   ],
   "bundles": [
@@ -1432,7 +1433,7 @@
         "xan-exp",
         "silverdragon"
       ],
-      "note": "Questie isn't out for Forever yet; the built-in quest tracker works fine meanwhile."
+      "note": "Questie is available separately in Find addons."
     },
     {
       "id": "dungeons-raids",
