@@ -276,6 +276,25 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   assert.equal(installedKeys(), 'failed,normal,updated,pinned,ignored');
   element('show-ignored').checked = false;
   assert.equal(run(`activeFilter = 'updates'; visiblePackages().map(p => p.key).join()`), 'failed,pinned', 'Updates filter keeps the failed row and the pinned update after refresh');
+  // Update all runs several at once: every update starts before the first one finishes.
+  const pending = [];
+  const parallelBatch = ['a', 'b', 'c', 'd', 'e'].map(k => addon(k, k.toUpperCase(), 'update'));
+  context.parallelBatch = parallelBatch;
+  run(`packages = parallelBatch.map(p => ({ ...p }))`);
+  const parallelStart = invokeCalls.length;
+  invokeReply = (command, args) => {
+    if (command === 'update_package') return new Promise(resolve => pending.push(() => resolve({ ...parallelBatch.find(p => p.key === args.key), status: 'ok', installed_version: '2' })));
+    if (command === 'scan') return Promise.resolve(parallelBatch.map(p => ({ ...p, status: 'ok', installed_version: '2' })));
+    return Promise.resolve({});
+  };
+  const parallelRun = run('updateAll()');
+  await new Promise(r => setTimeout(r, 0));
+  assert.equal(invokeCalls.slice(parallelStart).filter(c => c.command === 'update_package').length, 4, 'Four updates start together');
+  while (pending.length) { pending.shift()(); await new Promise(r => setTimeout(r, 0)); }
+  await parallelRun;
+  assert.deepEqual(invokeCalls.slice(parallelStart).filter(c => c.command === 'update_package').map(c => c.args.key), ['a', 'b', 'c', 'd', 'e']);
+  assert.match(element('toast').textContent, /^5 updated/);
+  run(`packages = batch; renderInstalled();`);
   invokeReply = () => Promise.resolve({ ...batch[4], status: 'ok', installed_version: '2' });
   await run(`updateOne(packages.find(p => p.key === 'failed'))`);
   assert.equal(run(`visiblePackages().some(p => p.key === 'failed')`), false, 'Successful retry clears the failure');

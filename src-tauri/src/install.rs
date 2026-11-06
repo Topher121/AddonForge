@@ -33,12 +33,16 @@ const FORBIDDEN_DIR_EXT: &[&str] = &[
     "app", "bundle", "framework", "kext", "plugin", "workflow", "appex", "prefpane", "saver",
 ];
 
+/// Clock plus a counter: Update all downloads several addons at once, and two
+/// can start in the same clock tick.
 fn unique() -> String {
+    static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    format!("{n:x}")
+    let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{n:x}-{seq}")
 }
 
 /// Exclusive lock on the addons folder's temp area, shared by every copy of the

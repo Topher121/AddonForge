@@ -386,8 +386,10 @@ function explainError(err) {
   return s;
 }
 
-async function updateOne(p, allowNonForever = false) {
-  setBusy(true);
+/// bulk: part of Update all, which owns the busy state, asks "install anyway?" itself
+/// and shows one summary toast instead of one per addon.
+async function updateOne(p, allowNonForever = false, { bulk = false } = {}) {
+  if (!bulk) setBusy(true);
   delete p.updateFailed;
   p.status = "checking";
   renderInstalled();
@@ -395,11 +397,12 @@ async function updateOne(p, allowNonForever = false) {
     const fresh = await invoke("update_package", { key: p.key, allowNonForever });
     const i = packages.findIndex((x) => x.key === p.key);
     if (i >= 0) packages[i] = fresh;
-    toast(svfixReminder(`${fresh.name} is now ${fresh.installed_version || "installed"}`));
+    if (!bulk) toast(svfixReminder(`${fresh.name} is now ${fresh.installed_version || "installed"}`));
     return "updated";
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
       p.status = "update";
+      if (bulk) return "notforever";
       renderInstalled();
       setBusy(false);
       const ok = await confirmModal(`<p><b>${esc(p.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">It may still work, or it may error in game. Install it anyway?</p>`, "Install anyway");
@@ -409,10 +412,10 @@ async function updateOne(p, allowNonForever = false) {
     p.status = "error";
     p.updateFailed = true;
     p.note = explainError(err);
-    toast(`${p.name} failed to update. ${p.note}`, true);
+    if (!bulk) toast(`${p.name} failed to update. ${p.note}`, true);
     return "failed";
   } finally {
-    setBusy(false);
+    if (!bulk) setBusy(false);
     renderInstalled();
   }
 }
@@ -471,15 +474,37 @@ async function checkUpdates() {
   }
 }
 
+const UPDATE_PARALLEL = 4;
 async function updateAll() {
   const todo = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored);
   if (!todo.length) return;
   const counts = { updated: 0, failed: 0, skipped: 0 };
   const failedNames = [];
-  for (const p of todo) {
-    const result = (await updateOne(p)) || "failed";
+  const notForever = [];
+  const tally = (p, result) => {
     counts[result] += 1;
     if (result === "failed") failedNames.push(p.name);
+  };
+  // Several at once: downloads overlap, and the backend's addons-folder lock still
+  // swaps folders one at a time.
+  setBusy(true);
+  try {
+    const queue = todo.slice();
+    const worker = async () => {
+      for (let p = queue.shift(); p; p = queue.shift()) {
+        const result = (await updateOne(p, false, { bulk: true })) || "failed";
+        if (result === "notforever") notForever.push(p);
+        else tally(p, result);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(UPDATE_PARALLEL, queue.length) }, worker));
+  } finally {
+    setBusy(false);
+  }
+  // "Install anyway?" questions come after the batch, one at a time.
+  for (const p of notForever) {
+    const ok = await confirmModal(`<p><b>${esc(p.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">It may still work, or it may error in game. Install it anyway?</p>`, "Install anyway");
+    tally(p, ok ? (await updateOne(p, true, { bulk: true })) || "failed" : "skipped");
   }
   if (counts.updated) await rescan(true);
   const parts = [`${counts.updated} updated`];
@@ -489,7 +514,8 @@ async function updateAll() {
     parts.push(`${counts.failed} failed (${named}${remaining > 0 ? ` and ${remaining} more` : ""})`);
   }
   if (counts.skipped) parts.push(`${counts.skipped} skipped`);
-  toast(parts.join(", "), counts.failed > 0);
+  const summary = parts.join(", ");
+  toast(counts.updated ? svfixReminder(summary) : summary, counts.failed > 0);
 }
 
 // The beta folder is still the managed one and the live client has appeared beside it.
