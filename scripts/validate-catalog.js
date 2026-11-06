@@ -24,6 +24,18 @@ const folderOwner = new Map();
 const idRe = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const repoRe = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+// Same hosts as allowed_image_host in src-tauri/src/icons.rs.
+function allowedImageHost(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) return false;
+    const host = url.hostname;
+    return host === "github.com" || host.endsWith(".githubusercontent.com") || host === "media.forgecdn.net"
+      || host === "addons.wago.io" || host.endsWith(".wago.io") || host === "www.wowinterface.com" || host === "cdn-wow.mmoui.com";
+  } catch {
+    return false;
+  }
+}
 const knownKeys = new Set(["id", "name", "desc", "category", "github", "wago", "wowi", "tukui", "curse", "asset_hint", "folders", "group_required_dependencies", "curse_locked", "url", "forever", "icon", "notice", "added", "github_moved_from"]);
 
 for (const [i, a] of (cat.addons || []).entries()) {
@@ -51,6 +63,7 @@ for (const [i, a] of (cat.addons || []).entries()) {
   if (a.tukui !== undefined && typeof a.tukui !== "string") problems.push(`${where}: "tukui" must be a slug`);
   if (a.asset_hint !== undefined && typeof a.asset_hint !== "string") problems.push(`${where}: "asset_hint" must be a string`);
   if (a.url !== undefined && !/^https?:\/\//.test(a.url)) problems.push(`${where}: "url" must start with http(s)://`);
+  if (a.icon !== undefined && (typeof a.icon !== "string" || !allowedImageHost(a.icon))) problems.push(`${where}: "icon" must be an https URL on GitHub, CurseForge's media host, Wago or WoWInterface`);
   if (a.notice !== undefined && (typeof a.notice !== "string" || a.notice.length > 160)) problems.push(`${where}: "notice" must be a short string (160 chars max)`);
   if (a.added !== undefined && !dateRe.test(a.added)) problems.push(`${where}: "added" must be YYYY-MM-DD`);
   if (a.forever !== undefined && a.forever !== null && typeof a.forever !== "boolean") problems.push(`${where}: "forever" must be true, false or null`);

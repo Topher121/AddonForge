@@ -24,6 +24,8 @@ const FORBIDDEN_EXT: &[&str] = &[
     "exe", "dll", "sys", "scr", "com", "pif", "cpl", "msi", "msp", "bat", "cmd", "ps1", "psm1",
     "vbs", "vbe", "js", "jse", "wsf", "wsh", "hta", "jar", "py", "sh", "lnk", "reg", "inf",
     "ocx", "drv", "app", "dmg", "apk", "command", "dylib", "so", "pkg", "scpt", "tool", "terminal",
+    "pyw", "mjs", "cjs", "url", "chm", "msc", "msix", "msixbundle", "appx", "appxbundle", "wsc", "ws",
+    "psd1", "application", "gadget", "iso", "img", "vhd", "vhdx",
 ];
 
 /// macOS bundles are directories; refuse folders with these extensions.
@@ -655,6 +657,24 @@ mod tests {
         fs::write(addon.join("data.bin"), [0xCF, 0xFA, 0xED, 0xFE, 0x07, 0x00]).unwrap();
         let err = safety_scan(&root).unwrap_err().to_string();
         assert!(err.contains("macOS executable"), "{err}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn safety_scan_refuses_other_runnable_file_types() {
+        let root = std::env::temp_dir().join(format!("af-types-{}", unique()));
+        let addon = root.join("Evil");
+        fs::create_dir_all(&addon).unwrap();
+        fs::write(addon.join("Evil.toc"), "## Interface: 16001\n").unwrap();
+        fs::write(addon.join("notes.lua"), "-- fine\n").unwrap();
+        assert!(safety_scan(&root).is_ok());
+        for name in ["run.pyw", "open.url", "help.chm", "console.msc", "pack.msix", "disk.iso", "SHOUT.MJS"] {
+            let file = addon.join(name);
+            fs::write(&file, "text, no magic bytes").unwrap();
+            let err = safety_scan(&root).unwrap_err().to_string();
+            assert!(err.contains("executable file"), "{name}: {err}");
+            fs::remove_file(&file).unwrap();
+        }
         let _ = fs::remove_dir_all(&root);
     }
 

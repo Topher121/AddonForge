@@ -53,6 +53,7 @@ pub struct CatalogEntry {
     #[serde(default)]
     pub forever: Option<bool>,
     /// Optional https icon for the Browse list (else the GitHub avatar is used).
+    /// Only fetched from the hosts in `icons::allowed_image_host`.
     #[serde(default)]
     pub icon: Option<String>,
     /// A short line shown on the installed row, e.g. "beta workaround, remove
