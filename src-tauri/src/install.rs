@@ -464,6 +464,40 @@ pub fn remove_folders_locked(addons_dir: &Path, folders: &[String]) -> anyhow::R
     Ok(gone)
 }
 
+/// Move the given addon folders to the Recycle Bin / Trash instead of deleting
+/// them. Used for addons AddonForge did not install: it never knew what was in
+/// them, so the removal has to be reversible. Caller holds the addons lock.
+pub fn recycle_folders_locked(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
+    let mut paths = Vec::new();
+    let mut gone = Vec::new();
+    for f in folders {
+        if f.is_empty() || f.starts_with('.') || f.contains("..") || f.contains(['/', '\\']) {
+            anyhow::bail!("refusing to remove suspicious folder name {f}");
+        }
+        let p = addons_dir.join(f);
+        let Ok(meta) = fs::symlink_metadata(&p) else { continue };
+        if meta.file_type().is_symlink() {
+            anyhow::bail!("{f} is a link, not an addon folder, so it was left alone");
+        }
+        if !meta.is_dir() {
+            continue;
+        }
+        // The shell's delete is not our code: never hand it a tree that can
+        // lead out of AddOns (ForeverSVFix links SavedVariables into folders).
+        let links = crate::recycle::unlink_reparse_points(&p).with_context(|| format!("check {f} for links"))?;
+        if links > 0 {
+            crate::logi!("unlinked {links} link(s) inside {f} before moving it to the {}", crate::recycle::label());
+        }
+        paths.push(p);
+        gone.push(f.clone());
+    }
+    if paths.is_empty() {
+        return Ok(gone);
+    }
+    crate::recycle::to_trash(&paths).map_err(|e| anyhow::anyhow!("{e}"))?;
+    Ok(gone)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -5,6 +5,7 @@ mod catalog;
 mod icons;
 mod install;
 pub mod log;
+mod recycle;
 mod selfupdate;
 mod signing;
 mod sources;
@@ -84,7 +85,7 @@ pub struct Package {
     pub remote_forever: Option<bool>,
     pub remote_prerelease: bool,
     pub update_available: bool,
-    /// ok | update | unknown | curse-only | no-source | no-key | error | checking
+    /// ok | update | curse-update | unknown | curse-only | no-source | no-key | error | checking
     pub status: String,
     pub note: String,
 }
@@ -388,7 +389,8 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             }
         }
 
-        let (status, note) = match &source {
+        let mut notice = entry.and_then(|e| e.notice.clone()).filter(|n| !n.trim().is_empty());
+        let (status, mut note) = match &source {
             Some(Source::Wago(_)) => (
                 "no-source".to_string(),
                 "Wago isn't a source any more (its updater keys are Patreon-only): reinstall from GitHub or CurseForge".to_string(),
@@ -400,6 +402,13 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             ),
             None => ("no-source".to_string(), "No update source found in its files".to_string()),
         };
+        // One line per CurseForge-only row: the catalogue's own wording replaces
+        // the generic sentence rather than appearing underneath it.
+        if status == "curse-only" {
+            if let Some(n) = notice.take() {
+                note = n;
+            }
+        }
         let mut folder_names: Vec<String> = fs.iter().map(|f| f.folder.clone()).collect();
         folder_names.sort();
         out.push(Package {
@@ -421,7 +430,7 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             source,
             curse_id,
             catalog_id: entry.map(|e| e.id.clone()),
-            notice: entry.and_then(|e| e.notice.clone()).filter(|n| !n.trim().is_empty()),
+            notice,
             supports_forever,
             managed: managed.is_some(),
             missing_deps: missing,
@@ -591,7 +600,11 @@ async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
             if let Some(rest) = msg.strip_prefix(sources::curseforge::OPT_OUT) {
                 // Not an error: the author only publishes through CurseForge's own app.
                 pkg.status = "curse-only".into();
-                pkg.note = format!("CurseForge{rest}; the link still works");
+                // One line only: the catalogue's wording wins when it has one.
+                pkg.note = pkg
+                    .notice
+                    .take()
+                    .unwrap_or_else(|| format!("CurseForge{rest}; the link still works"));
                 return;
             }
             loge!("check {}: {e}", pkg.key);
@@ -601,16 +614,87 @@ async fn resolve_into(app: &App, pkg: &mut Package, cat: &Catalog) {
     }
 }
 
+/// The version numbers inside a release name: "Bartender4-4.16.0" -> [4, 16, 0].
+/// Only a token that starts with a digit counts, so the "4" in the addon's own
+/// name is not mistaken for a version.
+fn version_numbers(s: &str) -> Option<Vec<u64>> {
+    let token = s
+        .split(|c: char| c.is_whitespace() || matches!(c, '-' | '_' | '/' | '(' | ')'))
+        .filter_map(|t| {
+            let t = t.trim().trim_end_matches(".zip").trim_start_matches(['v', 'V']);
+            let digits_and_dots = !t.is_empty()
+                && t.starts_with(|c: char| c.is_ascii_digit())
+                && t.chars().all(|c| c.is_ascii_digit() || c == '.');
+            digits_and_dots.then_some(t)
+        })
+        .next_back()?;
+    let parts: Vec<u64> = token.split('.').filter(|p| !p.is_empty()).map(|p| p.parse().unwrap_or(0)).collect();
+    (!parts.is_empty()).then_some(parts)
+}
+
+/// Is `remote` plainly a later version than `installed`? Anything we cannot
+/// read as a version answers no: a wrong "update available" is worse than none.
+fn later_version(installed: &str, remote: &str) -> bool {
+    match (version_numbers(installed), version_numbers(remote)) {
+        (Some(have), Some(there)) => {
+            let len = have.len().max(there.len());
+            let at = |v: &[u64], i: usize| v.get(i).copied().unwrap_or(0);
+            (0..len).find_map(|i| match at(&there, i).cmp(&at(&have, i)) {
+                std::cmp::Ordering::Equal => None,
+                other => Some(other == std::cmp::Ordering::Greater),
+            }).unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// A row we are not allowed to download still gets to say what the author
+/// published. Reads the update-check batch that is already in memory: no extra
+/// request, nothing written to disk, and never a download link.
+fn curse_listing_into(pkg: &mut Package, prerelease: bool) {
+    let Some(id) = pkg.curse_id else { return };
+    let Some(listing) = sources::curseforge::cached_info(id)
+        .and_then(|m| sources::curseforge::latest_listing(&m, prerelease))
+    else {
+        return;
+    };
+    let installed = pkg
+        .installed_version
+        .clone()
+        .or_else(|| pkg.installed_bundle_version.clone());
+    pkg.remote_version = Some(listing.version.clone());
+    pkg.remote_prerelease = listing.prerelease;
+    let same = installed
+        .as_deref()
+        .is_some_and(|v| normalize_version(v) == normalize_version(&listing.version));
+    if same {
+        return;
+    }
+    match installed.as_deref() {
+        Some(have) if later_version(have, &listing.version) => {
+            pkg.status = "curse-update".into();
+            pkg.note = format!("{} is on CurseForge; you have {have}. Open its page to download it.", listing.version);
+        }
+        Some(have) => pkg.note = format!("CurseForge lists {}; you have {have}.", listing.version),
+        None => pkg.note = format!("CurseForge lists {}.", listing.version),
+    }
+}
+
 async fn check_all(app: Shared, pkgs: &mut [Package], cat: &Catalog) {
-    let curse_ids: Vec<u64> = pkgs
+    let mut curse_ids: Vec<u64> = pkgs
         .iter()
         .filter(|p| !p.ignored)
         .filter_map(|p| match &p.source {
             Some(Source::Curse(id)) => Some(*id),
+            // Link-only rows join the same batch, so saying what the author
+            // published costs no extra request.
+            None => p.curse_id,
             _ => None,
         })
         .collect();
-    if !curse_ids.is_empty() {
+    curse_ids.sort_unstable();
+    curse_ids.dedup();
+    if !curse_ids.is_empty() && sources::curseforge::available() {
         match sources::curseforge::prefetch(&app.client, &curse_ids).await {
             Ok(n) => logi!("curseforge: prefetched {n} of {} addons in one request", curse_ids.len()),
             Err(e) => loge!("curseforge prefetch: {e}"),
@@ -634,6 +718,10 @@ async fn check_all(app: Shared, pkgs: &mut [Package], cat: &Catalog) {
     }
     while let Some(Ok((i, p))) = set.join_next().await {
         pkgs[i] = p;
+    }
+    let prerelease = app.state.lock().await.allow_prerelease;
+    for p in pkgs.iter_mut().filter(|p| p.status == "curse-only") {
+        curse_listing_into(p, prerelease);
     }
 }
 
@@ -662,6 +750,8 @@ struct Settings {
     has_curse: bool,
     /// Install everything that has an update right after the launch check.
     auto_update: bool,
+    /// What a reversible removal is called here: "Recycle Bin" or "Trash".
+    recycle_label: String,
 }
 
 #[tauri::command]
@@ -687,6 +777,7 @@ async fn get_settings(app: State<'_, Shared>) -> Result<Settings, String> {
         svfix: st.install_path.as_deref().map(|p| wow::svfix_present(Path::new(p))).unwrap_or(false),
         has_curse: sources::curseforge::available(),
         auto_update: st.auto_update,
+        recycle_label: recycle::label().into(),
     })
 }
 
@@ -1348,12 +1439,17 @@ async fn install_github(
 }
 
 #[tauri::command]
-async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<String>, String> {
+async fn remove_package(
+    app: State<'_, Shared>,
+    key: String,
+    recycle: Option<bool>,
+) -> Result<Vec<String>, String> {
     let install = current_install(&app).await?;
     let pkgs = scan_packages(&app).await?;
     let pkg = pkgs
-        .into_iter()
+        .iter()
         .find(|p| p.key == key)
+        .cloned()
         .ok_or_else(|| "Addon not found".to_string())?;
     let addons = addons_dir(&install);
     // Read the owners from disk under the same lock as installs, so a removal
@@ -1367,7 +1463,8 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
     };
     // Check ownership again under the lock: only folders the saved record still
     // assigns to this package are removed.
-    let owned = state::AppState::load().installed.get(&key).map(|i| i.folders.clone()).unwrap_or_default();
+    let saved = state::AppState::load();
+    let owned = saved.installed.get(&key).map(|i| i.folders.clone()).unwrap_or_default();
     let to_remove: Vec<String> = pkg
         .folders
         .iter()
@@ -1375,7 +1472,36 @@ async fn remove_package(app: State<'_, Shared>, key: String) -> Result<Vec<Strin
         .cloned()
         .collect();
     if to_remove.is_empty() {
-        return Err("That addon is no longer recorded as installed by this copy, so nothing was removed".into());
+        // Nothing of this addon was put there by us, so it is not ours to
+        // delete outright: it goes to the Recycle Bin, and only when the
+        // caller has asked the user that question.
+        if !recycle.unwrap_or(false) {
+            return Err("That addon is no longer recorded as installed by this copy, so nothing was removed".into());
+        }
+        let protected = protected_package_folders(&saved, &pkgs, &key);
+        if let Some((folder, owner)) = pkg
+            .folders
+            .iter()
+            .find_map(|f| protected.get(&f.to_ascii_lowercase()).map(|o| (f.clone(), o.clone())))
+        {
+            return Err(format!(
+                "The {folder} folder belongs to another addon ({owner}), so nothing was removed"
+            ));
+        }
+        let folders = pkg.folders.clone();
+        let gone = tokio::task::spawn_blocking(move || install::recycle_folders_locked(&addons, &folders))
+            .await
+            .map_err(err)?
+            .map_err(|e| e.to_string())?;
+        let key_owned = key.clone();
+        change_settings(&app, move |st| {
+            st.pinned.remove(&key_owned);
+            st.ignored.remove(&key_owned);
+        })
+        .await?;
+        drop(lock);
+        logi!("moved {key} to the {}: {:?}", recycle::label(), gone);
+        return Ok(gone);
     }
     let gone = tokio::task::spawn_blocking(move || install::remove_folders_locked(&addons, &to_remove))
         .await
@@ -2039,6 +2165,24 @@ mod tests {
         assert_eq!(s.len(), 13, "{s}");
         assert!(s.starts_with("20"), "{s}");
         assert_eq!(&s[8..9], "-");
+    }
+
+    #[test]
+    fn a_curseforge_release_name_is_only_an_update_when_it_plainly_is() {
+        assert_eq!(version_numbers("Bartender4-4.16.0"), Some(vec![4, 16, 0]), "the 4 in the name is not a version");
+        assert_eq!(version_numbers("Details!-v12.1.2"), Some(vec![12, 1, 2]));
+        assert_eq!(version_numbers("Leatrix_Plus_Forever_1.60.01.zip"), Some(vec![1, 60, 1]));
+        assert_eq!(version_numbers("12.1.2 (release)"), Some(vec![12, 1, 2]));
+        assert_eq!(version_numbers("HealBot"), None);
+
+        assert!(later_version("4.15.3", "Bartender4-4.16.0"));
+        assert!(later_version("1.2", "1.2.1"));
+        assert!(!later_version("4.16.0", "Bartender4-4.16.0"), "same version");
+        assert!(!later_version("4.16.1", "Bartender4-4.16.0"), "older on CurseForge");
+        assert!(!later_version("1.2.0", "1.2"), "a shorter name is not an update");
+        // Nothing readable as a version never claims an update.
+        assert!(!later_version("latest", "Bartender4-4.16.0"));
+        assert!(!later_version("4.15.3", "nightly build"));
     }
 
     #[test]

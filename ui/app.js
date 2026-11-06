@@ -15,7 +15,7 @@ let activeFilter = "all";
 let installedSort = { by: "status", descending: false };
 let bundles = [];
 const icons = new Map(); // "p:<package key>" / "c:<catalogue id>" -> data URL, or null when there is none
-const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.missing_deps.length > 0 || !p.supports_forever;
+const needsAttention = (p) => p.status === "error" || p.status === "no-key" || p.status === "no-source" || p.status === "curse-update" || p.missing_deps.length > 0 || !p.supports_forever;
 const failedUpdate = (p) => p.status === "error" && p.updateFailed;
 const byAddonName = (a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" });
 
@@ -155,6 +155,7 @@ function badge(p) {
   const map = {
     ok: "Up to date",
     update: "Update available",
+    "curse-update": "Update on CurseForge",
     error: failedUpdate(p) ? "Update failed" : "Error",
     "curse-only": "CurseForge only",
     "no-source": "No source",
@@ -165,7 +166,7 @@ function badge(p) {
   return `<span class="badge ${p.status}">${p.status === "checking" ? '<span class="spinner"></span> ' : ""}${map[p.status] || p.status}</span>`;
 }
 
-const installedStatusOrder = { error: 0, update: 1, checking: 2, unknown: 3, ok: 4, "curse-only": 5, "no-key": 6, "no-source": 7 };
+const installedStatusOrder = { error: 0, update: 1, "curse-update": 1.5, checking: 2, unknown: 3, ok: 4, "curse-only": 5, "no-key": 6, "no-source": 7 };
 const installedStatusRank = (p) => p.status === "update" && p.pinned ? 8 : installedStatusOrder[p.status] ?? 8;
 
 function installedSourceLabel(p) {
@@ -205,7 +206,7 @@ function visiblePackages() {
   return packages
     .filter((p) => {
       if (p.ignored && !showIgnored) return false;
-      if (activeFilter === "updates" && p.status !== "update" && !failedUpdate(p)) return false;
+      if (activeFilter === "updates" && p.status !== "update" && p.status !== "curse-update" && !failedUpdate(p)) return false;
       if (activeFilter === "attention" && !needsAttention(p)) return false;
       return !q || `${p.name} ${p.folders.join(" ")} ${p.author || ""} ${p.source_label}`.toLowerCase().includes(q);
     })
@@ -232,6 +233,10 @@ function renderInstalled() {
   $("stat-updates").textContent = updatesDue;
   $("stat-updates-word").textContent = updatesDue === 1 ? "update" : "updates";
   $("stat-attention").textContent = packages.filter((p) => !p.ignored && needsAttention(p)).length;
+  // Updates only CurseForge can hand over are counted apart from the ones we can install.
+  const curseUpdates = packages.filter((p) => p.status === "curse-update" && !p.ignored).length;
+  $("stat-curse").textContent = curseUpdates;
+  $("stat-curse-wrap").classList.toggle("hidden", !curseUpdates);
   const eligible = packages.filter((p) => p.status === "update" && !p.pinned && !p.ignored).length;
   $("btn-update-all").textContent = eligible ? `Update all (${eligible})` : "Update all";
   if (!packages.length) {
@@ -252,10 +257,12 @@ function renderInstalled() {
           const src = p.source_url
             ? `<a href="#" data-url="${esc(p.source_url)}">${esc(sourceLabel)}</a>`
             : `<span class="muted">${esc(sourceLabel || "—")}</span>`;
-          const canUpdate = p.source && p.status !== "no-key";
+          // A link-only row has a source we are not allowed to download from,
+          // so it never offers Install or Update.
+          const canUpdate = p.source && !["no-key", "curse-only", "curse-update"].includes(p.status);
           const retry = failedUpdate(p);
           const btnLabel = retry ? "Retry" : p.status === "update" ? "Update" : p.managed ? "Reinstall" : "Install";
-          const noteCls = p.status === "error" ? "note err" : "note";
+          const noteCls = p.status === "error" ? "note err" : p.status === "curse-update" ? "note warn" : "note";
           const notice = p.notice ? `<div class="note warn">${esc(p.notice)}</div>` : "";
           const deps = p.missing_deps.length
             ? `<div class="note warn">Needs: ${p.missing_deps
@@ -287,9 +294,11 @@ function renderInstalled() {
   const updates = packages.filter((p) => p.status === "update" && !p.ignored).length;
   const errors = packages.filter((p) => p.status === "error" && !p.ignored).length;
   const ignored = packages.filter((p) => p.ignored).length;
+  const onCurse = packages.filter((p) => p.status === "curse-update" && !p.ignored).length;
   $("summary").textContent =
     `Showing ${rows.length} of ${packages.length} addon${packages.length === 1 ? "" : "s"}` +
     (updates ? ` · ${updates} update${updates === 1 ? "" : "s"}` : "") +
+    (onCurse ? ` · ${onCurse} to get from CurseForge` : "") +
     (errors ? ` · ${errors} error${errors === 1 ? "" : "s"}` : "") +
     (ignored ? ` · ${ignored} ignored` : "");
   setBusy(busy);
@@ -363,12 +372,16 @@ $("installed-list").addEventListener("click", async (e) => {
     }
   }
   if (act === "remove") {
-    const ok = await confirmModal(`<p>Remove <b>${esc(p.name)}</b>?</p><p class="muted">Deletes: ${esc(p.folders.join(", "))}.<br>Your saved settings for it (in WTF) are left alone.</p>`, "Remove");
+    // AddonForge did not put this one there, so the removal is reversible.
+    const bin = settings?.recycle_label || "Recycle Bin";
+    const ok = p.managed
+      ? await confirmModal(`<p>Remove <b>${esc(p.name)}</b>?</p><p class="muted">Deletes: ${esc(p.folders.join(", "))}.<br>Your saved settings for it (in WTF) are left alone.</p>`, "Remove")
+      : await confirmModal(`<p>AddonForge didn't install <b>${esc(p.name)}</b>.</p><p class="muted">Move ${esc(p.folders.join(", "))} to the ${esc(bin)}? Your saved settings for it (in WTF) are kept.</p>`, `Move to ${bin}`);
     if (!ok) return;
     setBusy(true);
     try {
-      await invoke("remove_package", { key });
-      toast(`Removed ${p.name}`);
+      await invoke("remove_package", { key, recycle: true });
+      toast(p.managed ? `Removed ${p.name}` : `Moved ${p.name} to the ${bin}`);
       await rescan();
     } catch (err) {
       toast(String(err), true);

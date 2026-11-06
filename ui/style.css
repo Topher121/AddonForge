@@ -310,3 +310,6 @@ select:focus-visible { outline:1px solid var(--accent); outline-offset:2px; }
 .thead :is(.sort-head, .installed-sort-head).active { color: var(--accent, #e8a24a); }
 .thead :is(.sort-head, .installed-sort-head)[data-direction="asc"]::after { content: " ↑"; }
 .thead :is(.sort-head, .installed-sort-head)[data-direction="desc"]::after { content: " ↓"; }
+
+/* An update only CurseForge can hand over: amber, like anything you must do yourself. */
+.badge.curse-update { color: var(--warn, #e0a33a); font-weight: 600; }

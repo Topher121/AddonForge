@@ -391,6 +391,51 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   await element('btn-open-backups').onclick();
   assert.match(element('toast').textContent, /Could not open backups folder/);
   assert.match(element('toast').className, /bad/);
+  // A CurseForge-only row: one line, and an update you have to fetch yourself.
+  run(`packages = [
+    {key:'bt',name:'Bartender4',folders:['Bartender4'],source_label:'CurseForge',source_url:'https://www.curseforge.com/projects/1',status:'curse-update',supports_forever:true,missing_deps:[],installed_version:'4.15.3',remote_version:'Bartender4-4.16.0',note:'Bartender4-4.16.0 is on CurseForge; you have 4.15.3. Open its page to download it.'},
+    {key:'bg',name:'Bagnon',folders:['Bagnon'],source_label:'CurseForge',status:'curse-only',supports_forever:true,missing_deps:[],note:'The author only distributes this through CurseForge.'}
+  ]; activeFilter = 'all'; $('installed-filter').value = ''; $('show-ignored').checked = true; renderInstalled();`);
+  assert.match(element('installed-list').innerHTML, /Update on CurseForge/);
+  assert.match(element('summary').textContent, /1 to get from CurseForge/);
+  assert.equal(String(element('stat-curse').textContent), '1');
+  assert.equal(String(element('stat-updates').textContent), '0', 'Update all never counts one it cannot install');
+  assert.equal(element('btn-update-all').textContent, 'Update all');
+  assert.equal(String(element('stat-attention').textContent), '1');
+  assert.equal((element('installed-list').innerHTML.match(/class="note/g) || []).length, 2, 'One line per CurseForge row');
+  assert.doesNotMatch(element('installed-list').innerHTML, /data-act="update"/, 'Never an Install or Update button for a row we cannot download');
+  run(`activeFilter = 'updates'; renderInstalled();`);
+  assert.match(element('installed-list').innerHTML, /Bartender4/, 'The Updates view lists it');
+  assert.doesNotMatch(element('installed-list').innerHTML, /Bagnon/);
+  run(`activeFilter = 'all';`);
+
+  // Remove for an addon AddonForge did not install asks a different question.
+  run(`packages = [{key:'h',name:'HealBot',folders:['HealBot'],source_label:'',status:'no-source',supports_forever:true,missing_deps:[],managed:false,note:'No update source found in its files'}];
+    settings = { recycle_label: 'Recycle Bin' }; renderInstalled();`);
+  const rowOf = (key) => ({ dataset: { key } });
+  const clickAction = (key, act) => {
+    const button = { dataset: { act }, closest: (sel) => (sel === '.item' ? rowOf(key) : null) };
+    return element('installed-list').listeners.click({ target: { closest: (sel) => (sel === 'button[data-act]' ? button : null) } });
+  };
+  invokeReply = (command) => Promise.resolve(command === 'remove_package' ? ['HealBot'] : []);
+  const removing = clickAction('h', 'remove');
+  assert.match(element('modal-text').innerHTML, /didn&#39;t install|didn't install/);
+  assert.match(element('modal-text').innerHTML, /Recycle Bin/);
+  assert.equal(element('modal-yes').textContent, 'Move to Recycle Bin');
+  element('modal-yes').onclick();
+  await removing;
+  assert.equal(JSON.stringify(invokeCalls.find((c) => c.command === 'remove_package').args), '{"key":"h","recycle":true}');
+  assert.match(element('toast').textContent, /Moved HealBot to the Recycle Bin/);
+
+  // An addon it did install keeps the plain delete wording.
+  run(`packages = [{key:'m',name:'Mine',folders:['Mine'],source_label:'GitHub',status:'ok',supports_forever:true,missing_deps:[],managed:true}]; renderInstalled();`);
+  const removingMine = clickAction('m', 'remove');
+  assert.match(element('modal-text').innerHTML, /Remove <b>Mine<\/b>/);
+  assert.equal(element('modal-yes').textContent, 'Remove');
+  element('modal-yes').onclick();
+  await removingMine;
+  assert.match(element('toast').textContent, /Removed Mine/);
+
   run('clearTimeout(toastTimer)');
-  console.log('UI checks passed: counts, eligible updates, failure priority and retry, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions.');
+  console.log('UI checks passed: counts, eligible updates, failure priority and retry, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions, CurseForge-only rows and reversible removal.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

@@ -376,6 +376,43 @@ pub fn pick_file(m: &ModInfo, prerelease: bool) -> Pick {
     Pick::NoForeverFile
 }
 
+/// What CurseForge lists for an addon, for rows we are not allowed to
+/// download: the published name of the newest Forever file and nothing else.
+/// Never a download link.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Listing {
+    pub version: String,
+    pub prerelease: bool,
+}
+
+/// The newest Forever file CurseForge lists for `m`, whether or not the author
+/// allows third-party downloads. Reads the mod we already hold: no request.
+pub fn latest_listing(m: &ModInfo, prerelease: bool) -> Option<Listing> {
+    for kind in release_order(prerelease) {
+        let best = m
+            .latest_files
+            .iter()
+            .filter(|f| f.release_type == kind && is_forever(f))
+            .max_by(|a, b| a.file_date.cmp(&b.file_date).then(a.id.cmp(&b.id)));
+        if let Some(f) = best {
+            let name = match f.display_name.trim() {
+                "" => f.file_name.trim().trim_end_matches(".zip"),
+                n => n,
+            };
+            if !name.is_empty() {
+                return Some(Listing { version: name.to_string(), prerelease: f.release_type != 1 });
+            }
+        }
+    }
+    None
+}
+
+/// The mod as last fetched, while it is still in the in-memory cache. Used by
+/// link-only rows, which read the update-check batch instead of asking again.
+pub fn cached_info(id: u64) -> Option<ModInfo> {
+    cached(id)
+}
+
 pub async fn file(client: &reqwest::Client, mod_id: u64, file_id: u64) -> anyhow::Result<FileInfo> {
     let resp = request(client, reqwest::Method::GET, format!("{BASE}/mods/{mod_id}/files/{file_id}"))?
         .send()
@@ -497,6 +534,32 @@ mod tests {
         assert_eq!(pick_file(&m, false), Pick::NeedsFile(71));
         let none = ModInfo { allow_mod_distribution: Some(true), ..Default::default() };
         assert_eq!(pick_file(&none, false), Pick::NoForeverFile);
+    }
+
+    #[test]
+    fn an_opted_out_addon_still_says_what_was_published() {
+        // No download link anywhere, but the version name is public information.
+        let m = ModInfo {
+            allow_mod_distribution: Some(false),
+            latest_files: vec![
+                file(1, "Bartender4-4.15.9", 1, &[FOREVER_TYPE], None, "2026-10-01"),
+                file(2, "Bartender4-4.16.0", 1, &[FOREVER_TYPE], None, "2026-11-02"),
+                file(3, "Bartender4-4.16.1-beta", 2, &[FOREVER_TYPE], None, "2026-11-04"),
+                file(4, "Bartender4-retail", 1, &[517], None, "2026-11-05"),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(pick_file(&m, false), Pick::OptOut, "never downloadable");
+        let stable = latest_listing(&m, false).unwrap();
+        assert_eq!(stable.version, "Bartender4-4.16.0");
+        assert!(!stable.prerelease);
+        assert_eq!(latest_listing(&m, true).unwrap().version, "Bartender4-4.16.1-beta");
+        // Nothing published for Forever: nothing to say.
+        let retail_only = ModInfo {
+            latest_files: vec![file(5, "x", 1, &[517], None, "2026-11-05")],
+            ..Default::default()
+        };
+        assert_eq!(latest_listing(&retail_only, false), None);
     }
 
     #[test]
