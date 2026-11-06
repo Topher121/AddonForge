@@ -11,3 +11,6 @@ private/
 # AI working notes: private to this PC, never published
 CLAUDE.md
 .claude/
+
+# Local browser automation snapshots (contain personal account details)
+.playwright-mcp/
