@@ -7,7 +7,7 @@ A small, fast addon manager for **World of Warcraft: Forever**.
 - `AddonForge-Setup-…exe`: installs to your user folder with a Start menu shortcut and an uninstaller. No admin rights needed.
 - `AddonForge-v…exe`: portable, run it from anywhere, nothing installed.
 
-Either one updates itself when a new build is out. The Windows files are not code-signed yet, so SmartScreen may show an unknown-publisher warning. A Defender malware detection is a separate issue: if Defender blocks a file, report the build number and detection name; do not disable antivirus or add an exclusion.
+Either one updates itself when a new build is out. The Windows files are not code-signed yet, so SmartScreen may show an unknown-publisher warning. A Defender malware detection is a separate issue: if Defender blocks a file, report the build number and detection name; do not disable antivirus or add an exclusion. If AddonForge disappears after an update, the previous version is kept for one more launch (installed copy: `addonforge.exe.old` in `%LOCALAPPDATA%\AddonForge`; portable: the old file next to it), or reinstall from the releases page. Your addons and settings are not affected.
 
 ![AddonForge showing installed addons with update status](docs/screenshot.png)
 

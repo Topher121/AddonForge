@@ -61,6 +61,15 @@ try {
     # Security gate (studio rule): refuses to build if any protection is weakened.
     node (Join-Path $root "scripts\security-check.mjs")
     if ($LASTEXITCODE -ne 0) { throw "SECURITY CHECK FAILED - not building. Fix the config; never weaken a protection to get a build out." }
+    # Apps from build 32 only use GitHub's catalogue when catalog/forever.json.sig
+    # matches it. Re-sign after every catalogue edit:
+    #   node scripts/sign-release.js --text catalog/forever.json
+    if ($env:ADDONFORGE_RELEASE_KEY) {
+        node (Join-Path $root "scripts\sign-release.js") --verify --text (Join-Path $root "catalog\forever.json")
+        if ($LASTEXITCODE -ne 0) { throw "catalog/forever.json.sig does not match the catalogue - re-sign it (node scripts/sign-release.js --text catalog/forever.json) and commit both" }
+    } else {
+        Write-Warning "ADDONFORGE_RELEASE_KEY not set: catalogue signature not checked"
+    }
     if (-not $SkipTests) {
         cargo test | Select-Object -Last 3
         if ($LASTEXITCODE -ne 0) { throw "cargo test failed - not building" }

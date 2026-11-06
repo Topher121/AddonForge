@@ -1074,7 +1074,7 @@ async function loadSettings() {
   $("pref-prerelease").checked = !!settings.allow_prerelease;
   $("pref-autoupdate").checked = !!settings.auto_update;
   $("catalog-info").textContent = settings.catalog_count
-    ? `${settings.catalog_count} addons · ${settings.catalog_source === "remote" ? "latest from GitHub" : "built-in copy (GitHub copy unreachable)"}${settings.catalog_updated ? " · " + settings.catalog_updated : ""}`
+    ? `${settings.catalog_count} addons · ${settings.catalog_source === "remote" ? "latest from GitHub" : settings.catalog_source === "bundled (GitHub copy not signed)" ? "built-in copy (GitHub copy failed its signature check)" : settings.catalog_source === "bundled (newer)" ? "built-in copy (newer than GitHub's)" : "built-in copy (GitHub copy unreachable)"}${settings.catalog_updated ? " · " + settings.catalog_updated : ""}`
     : "not loaded yet";
   $("install-line").textContent = settings.install
     ? "Game folder connected"

@@ -100,3 +100,20 @@ if (problems.length) {
 }
 const withSource = cat.addons.filter((a) => a.github || a.wago || a.wowi || a.tukui).length;
 console.log(`catalog ok: ${cat.addons.length} entries, ${withSource} installable, ${cat.addons.length - withSource} link-only`);
+
+// Apps from build 32 only use GitHub's copy when forever.json.sig matches it.
+// Contributors can't sign, so this only warns: the maintainer re-signs after merging
+// (node scripts/sign-release.js --text catalog/forever.json).
+try {
+  const crypto = require("crypto");
+  const signing = fs.readFileSync(path.join(__dirname, "..", "src-tauri", "src", "signing.rs"), "utf8");
+  const block = signing.slice(signing.indexOf("RELEASE_PUBLIC_KEY: Option"));
+  const bytes = [...block.slice(0, block.indexOf("]);")).matchAll(/0x([0-9a-f]{2})/gi)].map((m) => parseInt(m[1], 16));
+  const key = crypto.createPublicKey({ key: Buffer.concat([Buffer.from("302a300506032b6570032100", "hex"), Buffer.from(bytes)]), format: "der", type: "spki" });
+  const data = Buffer.from(fs.readFileSync(file).filter((b) => b !== 13));
+  const sig = Buffer.from(fs.readFileSync(file + ".sig", "utf8").trim(), "base64");
+  if (crypto.verify(null, data, key, sig)) console.log("catalogue signature ok");
+  else console.warn("warning: catalog/forever.json.sig does not match; apps will keep their built-in copy until the maintainer re-signs it");
+} catch (e) {
+  console.warn("warning: catalogue signature not checked: " + e.message);
+}

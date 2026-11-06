@@ -151,20 +151,46 @@ pub fn bundled() -> Catalog {
     serde_json::from_str(BUNDLED).unwrap_or_default()
 }
 
-/// Latest catalogue: remote copy if reachable within a few seconds, else bundled.
+/// The bytes the catalogue signature covers: the file with any `\r` removed, so a
+/// Windows checkout (CRLF) and GitHub's copy (LF) sign and verify the same.
+pub fn signed_bytes(raw: &[u8]) -> Vec<u8> {
+    raw.iter().copied().filter(|&b| b != b'\r').collect()
+}
+
+/// The remote catalogue decides where every user downloads from, so it is only
+/// used when `forever.json.sig` (Ed25519, the release key) matches it.
+pub fn verify_remote(raw: &[u8], sig: &str) -> anyhow::Result<Catalog> {
+    verify_with(raw, sig, &crate::signing::verified_key()?)
+}
+
+fn verify_with(raw: &[u8], sig: &str, key: &[u8; 32]) -> anyhow::Result<Catalog> {
+    crate::signing::verify_manifest(&signed_bytes(raw), sig, key)?;
+    Ok(serde_json::from_slice(raw)?)
+}
+
+async fn fetch_text(client: &reqwest::Client, url: &str) -> Option<Vec<u8>> {
+    let r = client.get(url).timeout(Duration::from_secs(6)).send().await.ok()?.error_for_status().ok()?;
+    r.bytes().await.ok().map(|b| b.to_vec())
+}
+
+/// Latest catalogue: the signed remote copy if reachable within a few seconds, else bundled.
 pub async fn load(client: &reqwest::Client) -> (Catalog, &'static str) {
-    let remote = async {
-        let r = client
-            .get(REMOTE_URL)
-            .timeout(Duration::from_secs(6))
-            .send()
-            .await
-            .ok()?
-            .error_for_status()
-            .ok()?;
-        r.json::<Catalog>().await.ok()
-    }
-    .await;
+    let sig_url = format!("{REMOTE_URL}.sig");
+    let (raw, sig) = tokio::join!(fetch_text(client, REMOTE_URL), fetch_text(client, &sig_url));
+    let remote = match (raw, sig) {
+        (Some(raw), Some(sig)) => match verify_remote(&raw, &String::from_utf8_lossy(&sig)) {
+            Ok(c) => Some(c),
+            Err(e) => {
+                crate::loge!("catalogue on GitHub refused (signature): {e}");
+                return (bundled(), "bundled (GitHub copy not signed)");
+            }
+        },
+        (Some(_), None) => {
+            crate::loge!("catalogue on GitHub has no signature; using the built-in copy");
+            return (bundled(), "bundled (GitHub copy not signed)");
+        }
+        _ => None,
+    };
     // A build can ship with a catalogue newer than what is on GitHub for a
     // little while (or the remote copy could be rolled back); take the newer
     // of the two by their `updated` date, remote on a tie.
@@ -173,5 +199,31 @@ pub async fn load(client: &reqwest::Client) -> (Catalog, &'static str) {
         Some(c) if !c.addons.is_empty() && c.updated >= local.updated => (c, "remote"),
         Some(_) => (local, "bundled (newer)"),
         None => (local, "bundled"),
+    }
+}
+
+
+#[cfg(test)]
+mod signature_tests {
+    use super::*;
+    use base64::Engine;
+    use ed25519_dalek::{Signer, SigningKey};
+
+    #[test]
+    fn remote_catalogue_needs_a_matching_signature() {
+        let sk = SigningKey::from_bytes(&[5u8; 32]);
+        let pk = sk.verifying_key().to_bytes();
+        let lf: &[u8] = b"{\n  \"updated\": \"2026-11-06\",\n  \"addons\": []\n}\n";
+        let sig = base64::engine::general_purpose::STANDARD.encode(sk.sign(lf).to_bytes());
+        assert!(verify_with(lf, &sig, &pk).is_ok());
+        // A CRLF checkout of the same file still verifies.
+        let crlf = String::from_utf8_lossy(lf).replace('\n', "\r\n");
+        assert!(verify_with(crlf.as_bytes(), &sig, &pk).is_ok());
+        // Any change to the content, or another key, is refused.
+        let changed = String::from_utf8_lossy(lf).replace("2026-11-06", "2026-11-07");
+        assert!(verify_with(changed.as_bytes(), &sig, &pk).is_err());
+        let other = SigningKey::from_bytes(&[6u8; 32]).verifying_key().to_bytes();
+        assert!(verify_with(lf, &sig, &other).is_err());
+        assert!(verify_with(lf, "not a signature", &pk).is_err());
     }
 }

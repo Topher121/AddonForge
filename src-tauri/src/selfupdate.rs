@@ -304,16 +304,38 @@ fn write_start_marker(marker: &Path) {
     }
 }
 
-/// Called once the window is up: this copy has really started, so it tells the
-/// old copy and removes the old exe.
+/// Where the previous exe is remembered between the update and the next launch.
+fn previous_exe_note() -> PathBuf {
+    crate::state::AppState::dir().join("previous-exe.txt")
+}
+
+/// Called once the window is up. Right after an update this copy tells the old
+/// copy it started, but KEEPS the old exe: Defender has removed brand-new builds
+/// a few seconds after their window opened, and deleting the old file then left
+/// people with no AddonForge at all. The old exe goes on the next normal launch,
+/// once this build has proved it survives a second start.
 pub fn confirm_started() {
     if let Some((old, marker)) = PENDING_REPLACE.get() {
         if let Some(marker) = marker {
             write_start_marker(marker);
         }
-        let old = old.clone();
-        std::thread::spawn(move || finish_replace(&old));
+        match std::fs::write(previous_exe_note(), old.to_string_lossy().as_bytes()) {
+            Ok(()) => crate::logi!("self-update: keeping {} until the next launch", old.display()),
+            Err(e) => crate::loge!("self-update: could not note the previous exe ({e}); keeping it"),
+        }
+        return;
     }
+    let note = previous_exe_note();
+    let Ok(text) = std::fs::read_to_string(&note) else { return };
+    let old = PathBuf::from(text.trim());
+    std::thread::spawn(move || {
+        let me = std::env::current_exe().ok();
+        // Someone who went back to the old file by hand is running it: keep it.
+        if me.as_deref().map(|m| m.to_string_lossy().eq_ignore_ascii_case(&old.to_string_lossy())) != Some(true) {
+            finish_replace(&old);
+        }
+        let _ = std::fs::remove_file(&note);
+    });
 }
 
 /// Only the old AddonForge exe (`AddonForge*.exe` or `AddonForge*.exe.old`)
