@@ -436,6 +436,49 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   await removingMine;
   assert.match(element('toast').textContent, /Removed Mine/);
 
+  // Local ZIP preview escapes names and cancellation never installs.
+  invokeCalls.length = 0;
+  invokeReply = (command) => Promise.resolve(command === 'preview_zip'
+    ? { install: 'QA/game', plan: { digest: 'abc', folders: [['Example<unsafe>', true], ['Options', false]] } }
+    : []);
+  run('setBusy(false)');
+  const cancelledZip = run(`importZip('QA/download.zip')`);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(element('modal-text').innerHTML, /Example&lt;unsafe&gt;/);
+  assert.match(element('modal-text').innerHTML, /Replace installed folder/);
+  assert.match(element('modal-text').innerHTML, /Install new folder/);
+  element('modal-no').onclick();
+  await cancelledZip;
+  assert.equal(invokeCalls.filter(c => c.command === 'install_zip').length, 0);
+  const installedZip = run(`importZip('QA/download.zip')`);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  element('modal-yes').onclick();
+  await installedZip;
+  const zipCall = invokeCalls.find(c => c.command === 'install_zip');
+  assert.equal(zipCall.args.path, 'QA/download.zip');
+  assert.equal(zipCall.args.plan.digest, 'abc');
+  assert.equal(run('busy'), false);
+  invokeReply = () => Promise.reject(new Error('Unsafe ZIP'));
+  await run(`importZip('QA/unsafe.zip')`);
+  assert.match(element('toast').textContent, /Unsafe ZIP/);
+  assert.equal(run('busy'), false);
+
+  // Exercise the native drag callback with the same window API the app uses.
+  run(`T.webviewWindow = { getCurrentWebviewWindow: () => ({ onDragDropEvent: (fn) => { window.zipDrop = fn; return Promise.resolve(() => {}); } }) };`);
+  vm.runInContext(fs.readFileSync('ui/app.js', 'utf8').split('// Native Tauri drag events provide paths without exposing filesystem access to JS.')[1], context);
+  invokeCalls.length = 0;
+  run(`window.zipDrop({payload:{type:'drop',paths:['a.zip','b.zip']}})`);
+  assert.match(element('toast').textContent, /one downloaded addon ZIP/);
+  assert.equal(invokeCalls.length, 0);
+  run(`setBusy(true); window.zipDrop({payload:{type:'drop',paths:['a.zip']}}); setBusy(false);`);
+  assert.equal(invokeCalls.length, 0);
+  invokeReply = () => Promise.reject(new Error('Drop preview reached'));
+  run(`window.zipDrop({payload:{type:'drop',paths:['QA/Addon.ZIP']}})`);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.equal(invokeCalls[0].command, 'preview_zip');
+  assert.equal(invokeCalls[0].args.path, 'QA/Addon.ZIP');
+  assert.equal(run('busy'), false);
+
   run('clearTimeout(toastTimer)');
-  console.log('UI checks passed: counts, eligible updates, failure priority and retry, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions, CurseForge-only rows and reversible removal.');
+  console.log('UI checks passed: counts, eligible updates, failure priority and retry, filters, search, escaping, empty states, modal focus and cancellation, sort direction and remote pagination, saved preferences, backups and folder actions, CurseForge-only rows, reversible removal, ZIP confirmation/cancellation/errors and native drop routing.');
 })().catch((error) => { console.error(error); process.exitCode = 1; });

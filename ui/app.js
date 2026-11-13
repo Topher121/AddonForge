@@ -1329,6 +1329,29 @@ $("selfupdate-go").onclick = async () => {
   }
 };
 
+// A local ZIP still requires confirmation, including when dropped onto the window.
+async function importZip(path) {
+  if (busy) return;
+  setBusy(true);
+  try {
+    const preview = await invoke("preview_zip", { path });
+    const rows = preview.plan.folders.map(([name, exists]) => `<li><b>${esc(name)}</b> ? ${exists ? "Replace installed folder" : "Install new folder"}</li>`).join("");
+    const ok = await confirmModal(`<p>Install this downloaded ZIP into your selected WoW installation?</p><ul>${rows}</ul><p class="muted">Close WoW first. Check this download is for Forever. Saved settings in WTF and your downloaded ZIP are kept.</p>`, "Install ZIP");
+    if (!ok) return;
+    await invoke("install_zip", { path, install: preview.install, plan: preview.plan });
+    await rescan();
+    toast(svfixReminder("ZIP installed"));
+  } catch (e) { toast(String(e), true); }
+  finally { setBusy(false); }
+}
+$("btn-zip").onclick = async () => {
+  if (busy) return;
+  try {
+    const path = await T.dialog.open({ title: "Install downloaded ZIP", multiple: false, filters: [{ name: "Addon ZIP", extensions: ["zip"] }] });
+    if (path) await importZip(path);
+  } catch (e) { toast(String(e), true); }
+};
+
 // ---------------------------------------------------------------- boot
 (async () => {
   await loadSettings();
@@ -1363,3 +1386,15 @@ $("selfupdate-go").onclick = async () => {
     })
     .catch(() => {});
 })();
+
+// Native Tauri drag events provide paths without exposing filesystem access to JS.
+if (T.webviewWindow?.getCurrentWebviewWindow) {
+  T.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(({ payload }) => {
+    if (payload.type !== "drop" || busy) return;
+    if (payload.paths.length !== 1 || !/\.zip$/i.test(payload.paths[0])) {
+      toast("Drop one downloaded addon ZIP at a time", true);
+      return;
+    }
+    importZip(payload.paths[0]);
+  }).catch((e) => toast(String(e), true));
+}

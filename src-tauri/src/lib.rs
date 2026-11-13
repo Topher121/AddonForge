@@ -348,7 +348,7 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
         let name = entry
             .map(|e| e.name.clone())
             .unwrap_or_else(|| primary.title.clone());
-        let installed_version = managed.map(|m| m.version.clone())
+        let installed_version = managed.map(|m| m.version.clone()).filter(|v| !v.is_empty())
             .or_else(|| entry.filter(|e| e.group_required_dependencies).and_then(|_| primary.version.clone()))
             .or_else(|| fs.iter().find_map(|f| f.version.clone()))
             .filter(|v| !v.is_empty() && !v.starts_with('@'));
@@ -975,6 +975,37 @@ async fn scan_packages(app: &App) -> Result<Vec<Package>, String> {
         .map_err(err)?;
     let st = app.state.lock().await.clone();
     Ok(build_packages(&st, &cat, &folders))
+}
+
+#[tauri::command]
+async fn preview_zip(app: State<'_, Shared>, path: String) -> Result<serde_json::Value, String> {
+    let install = current_install(&app).await?;
+    let addons = addons_dir(&install);
+    let plan = tokio::task::spawn_blocking(move || install::local_zip(Path::new(&path), &addons, None))
+        .await.map_err(err)?.map_err(err)?;
+    Ok(serde_json::json!({ "plan": plan, "install": install }))
+}
+
+#[tauri::command]
+async fn install_zip(app: State<'_, Shared>, path: String, install: String, plan: install::ZipPlan) -> Result<(), String> {
+    if current_install(&app).await? != install { return Err("The selected game changed. Preview the ZIP again.".into()); }
+    let addons = addons_dir(&install);
+    let done = tokio::task::spawn_blocking(move || install::local_zip(Path::new(&path), &addons, Some(&plan)))
+        .await.map_err(err)?.map_err(err)?;
+    // Forget stale release versions for replaced folders; TOCs supply the new
+    // version while source/ownership records continue to support future updates.
+    let folders = wow::scan_addons(Path::new(&install));
+    change_settings(&app, move |st| {
+        for rec in st.installed.values_mut() {
+            if rec.folders.iter().any(|f| done.folders.iter().any(|(name, _)| name.eq_ignore_ascii_case(f))) {
+                rec.version = folders.iter().find(|f|
+                    rec.folders.iter().any(|name| name.eq_ignore_ascii_case(&f.folder))
+                    && done.folders.iter().any(|(name, _)| name.eq_ignore_ascii_case(&f.folder)))
+                    .and_then(|f| f.version.clone()).unwrap_or_default();
+            }
+        }
+    }).await?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -2107,6 +2138,8 @@ pub fn run() {
             open_log,
             export_list,
             import_list,
+            preview_zip,
+            install_zip,
             check_self_update,
             skip_self_update,
             apply_self_update,

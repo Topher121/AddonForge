@@ -440,6 +440,66 @@ pub fn place_locked(
     result
 }
 
+/// Preview and install local archives from a bounded private copy. The user's
+/// download is never passed to place_locked, which consumes its input.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct ZipPlan {
+    pub digest: String,
+    pub folders: Vec<(String, bool)>,
+}
+
+pub fn local_zip(path: &Path, addons: &Path, approved: Option<&ZipPlan>) -> anyhow::Result<ZipPlan> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    if !path.extension().is_some_and(|e| e.eq_ignore_ascii_case("zip")) {
+        anyhow::bail!("Choose a downloaded .zip file");
+    }
+    let _lock = lock_addons(addons)?;
+    let work = addons.join(TMP_DIR).join(unique());
+    fs::create_dir_all(&work)?;
+    let result = (|| -> anyhow::Result<ZipPlan> {
+        let copy = work.join("download.zip");
+        let mut input = fs::File::open(path)?.take(512 * 1024 * 1024 + 1);
+        let mut output = fs::File::create(&copy)?;
+        let size = std::io::copy(&mut input, &mut output)?;
+        if size > 512 * 1024 * 1024 { anyhow::bail!("ZIP exceeds the 512 MB limit"); }
+        drop(output);
+        let mut file = fs::File::open(&copy)?;
+        let mut hash = Sha256::new();
+        let mut buf = [0u8; 65536];
+        loop {
+            let n = file.read(&mut buf)?;
+            if n == 0 { break; }
+            hash.update(&buf[..n]);
+        }
+        let extracted = work.join("preview");
+        fs::create_dir_all(&extracted)?;
+        let mut archive = zip::ZipArchive::new(fs::File::open(&copy)?)?;
+        extract_limited(&mut archive, &extracted)?;
+        safety_scan(&extracted)?;
+        let mut seen = HashSet::new();
+        let mut folders = Vec::new();
+        for dir in addon_dirs(&extracted)? {
+            let name = canonical_name(&dir).ok_or_else(|| anyhow!("bad addon folder name"))?;
+            if name.starts_with('.') || name.contains("..") || name.contains(['/', '\\', ':'])
+                || !seen.insert(name.to_ascii_lowercase()) {
+                anyhow::bail!("ZIP has unsafe or duplicate addon folder names");
+            }
+            let exists = fs::read_dir(addons)?.flatten().any(|e| e.file_name().to_string_lossy().eq_ignore_ascii_case(&name));
+            folders.push((name, exists));
+        }
+        folders.sort();
+        let plan = ZipPlan { digest: format!("{:x}", hash.finalize()), folders };
+        if let Some(approved) = approved {
+            if approved != &plan { anyhow::bail!("The ZIP or installed folders changed. Preview the ZIP again before installing."); }
+            place_locked(&copy, addons, &HashMap::new())?;
+        }
+        Ok(plan)
+    })();
+    let _ = fs::remove_dir_all(&work);
+    result
+}
+
 /// Delete the given addon folders (used by "Remove").
 #[cfg_attr(not(test), allow(dead_code))]
 pub fn remove_folders(addons_dir: &Path, folders: &[String]) -> anyhow::Result<Vec<String>> {
@@ -501,6 +561,39 @@ pub fn recycle_folders_locked(addons_dir: &Path, folders: &[String]) -> anyhow::
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn local_import_previews_replaces_and_keeps_download() {
+        let root = std::env::temp_dir().join(format!("addonforge-local-{}", unique()));
+        let addons = root.join("AddOns");
+        fs::create_dir_all(addons.join("Example")).unwrap();
+        fs::write(addons.join("Example/old.lua"), "old").unwrap();
+        let zip = addon_zip(&root, &[("Example/Example.toc", "## Version: 2"), ("Example/new.lua", "ok"), ("Example_Options/Example_Options.toc", "## Version: 2")]);
+        let plan = local_zip(&zip, &addons, None).unwrap();
+        assert_eq!(plan.folders, vec![("Example".into(), true), ("Example_Options".into(), false)]);
+        assert!(addons.join("Example/old.lua").exists());
+        local_zip(&zip, &addons, Some(&plan)).unwrap();
+        assert!(zip.exists());
+        assert!(addons.join("Example/new.lua").exists());
+        assert!(!addons.join("Example/old.lua").exists());
+        assert!(addons.join("Example_Options/Example_Options.toc").exists());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn local_import_refuses_changed_and_unsafe_archives() {
+        let root = std::env::temp_dir().join(format!("addonforge-local-changed-{}", unique()));
+        let addons = root.join("AddOns");
+        let zip = addon_zip(&root, &[("Example/Example.toc", "## Version: 1")]);
+        let plan = local_zip(&zip, &addons, None).unwrap();
+        addon_zip(&root, &[("Example/Example.toc", "## Version: 2")]);
+        assert!(local_zip(&zip, &addons, Some(&plan)).is_err());
+        assert!(!addons.join("Example").exists());
+        addon_zip(&root, &[("Example/Example.toc", "## Version: 2"), ("Example/bad.exe", "bad")]);
+        assert!(local_zip(&zip, &addons, None).is_err());
+        assert!(zip.exists());
+        let _ = fs::remove_dir_all(root);
+    }
 
     fn addon_zip(root: &Path, files: &[(&str, &str)]) -> PathBuf {
         fs::create_dir_all(root).unwrap();
