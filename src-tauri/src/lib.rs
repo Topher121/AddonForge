@@ -184,6 +184,14 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
     }
     let on_disk: HashMap<String, &AddonFolder> =
         folders.iter().map(|f| (f.folder.to_ascii_lowercase(), f)).collect();
+    // Issue #8: CurseForge publishes QuestieDB as its own project, ahead of the
+    // GitHub bundle. A QuestieDB that came from CurseForge (and that we did not
+    // install) is checked as itself, and Questie then updates from CurseForge
+    // too, because the GitHub bundle would overwrite the separate QuestieDB.
+    let questie_db_split = !managed_folder.contains_key("questiedb")
+        && on_disk.get("questiedb").and_then(|f| f.curse).is_some_and(|id| {
+            Some(id) != cat.addons.iter().find(|e| e.id == "questie").and_then(|e| e.curse)
+        });
 
     // First pass: direct keys (managed / catalogue / ids / standalone).
     let direct_key = |f: &AddonFolder| -> (String, Option<&CatalogEntry>) {
@@ -197,7 +205,9 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             // QuestieDB can be installed separately. Group only when Questie is present
             // and no other package owns the database folder.
             .filter(|e| e.id != "questie" || !questie_db || (
-                on_disk.contains_key("questie") && managed_owner.unwrap_or(questie_owner) == questie_owner
+                !questie_db_split
+                    && on_disk.contains_key("questie")
+                    && managed_owner.unwrap_or(questie_owner) == questie_owner
             ))
             .or_else(|| f.wago.as_deref().and_then(|w| by_wago.get(w).copied()))
             .or_else(|| f.curse.and_then(|c| by_curse.get(&c).copied()))
@@ -358,6 +368,12 @@ fn build_packages(st: &AppState, cat: &Catalog, folders: &[AddonFolder]) -> Vec<
             .filter(|v| !v.is_empty() && !v.starts_with('@'));
         let source = pick_source(entry, primary, managed)
             .or_else(|| fs.iter().find_map(|f| pick_source(None, f, None)));
+        let source = match entry {
+            Some(e) if questie_db_split && e.id == "questie" && managed.is_none()
+                && !e.curse_locked && sources::curseforge::available() =>
+                e.curse.map(Source::Curse).or(source),
+            _ => source,
+        };
         let installed_bundle_version = if managed.is_none()
             && primary.folder.eq_ignore_ascii_case("Questie")
             && matches!(&source, Some(Source::Github(repo)) if repo.eq_ignore_ascii_case("Questie/Questie"))
@@ -1030,8 +1046,11 @@ async fn refresh_fingerprints(app: &App) {
         let folders = wow::scan_addons(Path::new(&install));
         let pkgs = build_packages(&st, &cat, &folders);
         let mut out = Vec::new();
-        for p in pkgs.iter().filter(|p| p.source.is_none() && p.curse_id.is_none() && !p.managed && !p.ignored) {
-            for f in &p.folders {
+        let unknown = |p: &&Package| p.source.is_none() && p.curse_id.is_none() && !p.managed && !p.ignored;
+        // QuestieDB too, unless we installed it: CurseForge ships it separately.
+        let questie_db = |p: &&Package| !p.managed && p.folders.iter().any(|f| f.eq_ignore_ascii_case("QuestieDB"));
+        for p in pkgs.iter().filter(|p| unknown(p) || questie_db(p)) {
+            for f in p.folders.iter().filter(|f| unknown(&p) || f.eq_ignore_ascii_case("QuestieDB")) {
                 if let Some(fp) = fingerprint::folder_fingerprint(&dir.join(f)) {
                     out.push((f.clone(), fp));
                 }
@@ -2258,6 +2277,43 @@ pub fn note_replace(old: std::path::PathBuf, marker: Option<std::path::PathBuf>)
 #[cfg(test)]
 mod tests {
     use sources::curseforge::FolderMatch;
+
+    #[test]
+    fn a_curseforge_questiedb_is_its_own_package_and_questie_follows_it() {
+        let cat = Catalog {
+            addons: vec![CatalogEntry {
+                id: "questie".into(), name: "Questie".into(), github: Some("Questie/Questie".into()),
+                curse: Some(334372), folders: vec!["Questie".into(), "QuestieDB".into()],
+                group_required_dependencies: true, ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let questie = AddonFolder { folder: "Questie".into(), title: "Questie".into(), version: Some("12.7.0".into()),
+            dependencies: vec!["QuestieDB".into()], ..Default::default() };
+        let db = |curse| AddonFolder { folder: "QuestieDB".into(), title: "QuestieDB".into(), version: Some("1.0.14".into()), curse, ..Default::default() };
+        // GitHub bundle (no CurseForge match for the database): one package, as before.
+        let pkgs = build_packages(&AppState::default(), &cat, &[questie.clone(), db(None)]);
+        assert_eq!(pkgs.len(), 1);
+        assert_eq!(pkgs[0].source, Some(Source::Github("Questie/Questie".into())));
+        // From the CurseForge app: two packages.
+        let pkgs = build_packages(&AppState::default(), &cat, &[questie.clone(), db(Some(555))]);
+        assert_eq!(pkgs.len(), 2);
+        let q = pkgs.iter().find(|p| p.key == "cat:questie").unwrap();
+        let d = pkgs.iter().find(|p| p.key == "curse:555").unwrap();
+        assert_eq!(q.folders, vec!["Questie".to_string()]);
+        assert_eq!(d.folders, vec!["QuestieDB".to_string()]);
+        if sources::curseforge::available() {
+            assert_eq!(q.source, Some(Source::Curse(334372)));
+            assert_eq!(d.source, Some(Source::Curse(555)));
+        }
+        // Installed by us as the bundle: stays one package whatever the id says.
+        let mut st = AppState::default();
+        st.installed.insert("cat:questie".into(), Installed {
+            source: "github".into(), source_id: "Questie/Questie".into(), version: "x".into(),
+            folders: vec!["Questie".into(), "QuestieDB".into()], ..Default::default()
+        });
+        assert_eq!(build_packages(&st, &cat, &[questie, db(Some(555))]).len(), 1);
+    }
 
     #[test]
     fn fingerprint_match_gives_an_unknown_folder_its_curseforge_source() {

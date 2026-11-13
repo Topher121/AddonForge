@@ -1,6 +1,6 @@
 {
   "flavor": "forever",
-  "updated": "2026-11-07",
+  "updated": "2026-11-13",
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, when the entry was listed). Top-level: bundles (starter packs). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
@@ -1831,6 +1831,187 @@
       "forever": true,
       "added": "2026-11-07",
       "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
+    },
+    {
+      "id": "ahledger",
+      "name": "AHledger",
+      "desc": "Auction house price tracking with crafting profits, price history and alerts.",
+      "category": "Auction house",
+      "curse": 1701343,
+      "folders": [
+        "AHledger"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/ahledger",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "forever-dungeon-routes",
+      "name": "Forever Dungeon Routes",
+      "desc": "Dungeon and raid maps with ready routes, boss tracking and a route editor.",
+      "category": "Bosses",
+      "github": "Checkov23/ForeverDungeonRoutes",
+      "curse": 1735098,
+      "folders": [
+        "ForeverDungeonRoutes"
+      ],
+      "url": "https://github.com/Checkov23/ForeverDungeonRoutes",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "forever-trinket-menu",
+      "name": "Forever Trinket Menu",
+      "desc": "A small trinket bar: use your trinkets in one click and swap them from your bags.",
+      "category": "Items",
+      "curse": 1732503,
+      "folders": [
+        "ForeverTrinketMenu"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/forever-trinket-menu",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "happy-camper",
+      "name": "Happy Camper",
+      "desc": "Shares campfires on the map and finds camps with the buffs you want.",
+      "category": "World",
+      "curse": 1715557,
+      "folders": [
+        "HappyCamper"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/happy-camper",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "hide-anything",
+      "name": "Hide Anything - Forever",
+      "desc": "Hides or fades parts of the default UI, with combat auto-hide and profiles.",
+      "category": "UI",
+      "curse": 1462303,
+      "curse_locked": true,
+      "folders": [
+        "HideAnything"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/hide-anything",
+      "forever": true,
+      "added": "2026-11-13",
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
+    },
+    {
+      "id": "node-sight",
+      "name": "Node Sight",
+      "desc": "Makes nearby herbs, ore, chests and skinnable corpses sparkle, and shows the skill each needs.",
+      "category": "Professions",
+      "github": "Krelock/NodeSight",
+      "curse": 1731463,
+      "folders": [
+        "NodeSight"
+      ],
+      "url": "https://github.com/Krelock/NodeSight",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "road-to-sixty",
+      "name": "Road To Sixty",
+      "desc": "Records your route from level 1 to 60 and replays it on the world map.",
+      "category": "Leveling",
+      "github": "Jordanburch101/road-to-sixty",
+      "curse": 1729494,
+      "folders": [
+        "RoadToSixty"
+      ],
+      "url": "https://github.com/Jordanburch101/road-to-sixty",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "wow-task-manager",
+      "name": "WoW Task Manager - Forever",
+      "desc": "Performance graphs: FPS, frame times, addon CPU and memory, latency and stutters.",
+      "category": "Dev",
+      "curse": 1678265,
+      "curse_locked": true,
+      "folders": [
+        "WoWTaskManager"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/wow-task-manager",
+      "forever": true,
+      "added": "2026-11-13",
+      "notice": "The author only distributes this through CurseForge's own app, so it stays a link here."
+    },
+    {
+      "id": "forever-loot-sparkles",
+      "name": "Forever Loot Sparkles",
+      "desc": "Keeps the sparkle on quest items on, even after a graphics preset turns it off.",
+      "category": "Loot",
+      "github": "svengabr/ForeverLootSparkles",
+      "curse": 1729017,
+      "folders": [
+        "ForeverLootSparkles"
+      ],
+      "url": "https://github.com/svengabr/ForeverLootSparkles",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "foreverartisan",
+      "name": "ForeverArtisan",
+      "desc": "Every profession and Camping in one addon: shopping lists, prices and one-button fishing.",
+      "category": "Professions",
+      "curse": 1716370,
+      "folders": [
+        "ForeverArtisan_Core",
+        "ForeverArtisan_Fishing",
+        "ForeverArtisan_Herbalism",
+        "ForeverArtisan_Mining",
+        "ForeverArtisan_Skinning",
+        "ForeverArtisan_Cooking",
+        "ForeverArtisan_FirstAid",
+        "ForeverArtisan_Contacts",
+        "ForeverArtisan_Alchemy",
+        "ForeverArtisan_Leatherworking",
+        "ForeverArtisan_Blacksmithing",
+        "ForeverArtisan_Tailoring",
+        "ForeverArtisan_Engineering",
+        "ForeverArtisan_Enchanting",
+        "ForeverArtisan_Camping"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/foreverartisan",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "hastes-super-tweaks",
+      "name": "Haste's Super Tweaks",
+      "desc": "A bundle of small quality-of-life tweaks.",
+      "category": "UI",
+      "github": "hastecraft/super-tweaks",
+      "curse": 1739405,
+      "folders": [
+        "HastesSuperTweaks"
+      ],
+      "url": "https://github.com/hastecraft/super-tweaks",
+      "forever": true,
+      "added": "2026-11-13"
+    },
+    {
+      "id": "itemtree",
+      "name": "ItemTree",
+      "desc": "Shows how items connect: crafting chains, quests, drops, vendors and disenchants.",
+      "category": "Tooltips",
+      "curse": 1711215,
+      "folders": [
+        "ItemTree",
+        "ItemTree_Data",
+        "ItemTree_Professions"
+      ],
+      "url": "https://www.curseforge.com/wow/addons/itemtree",
+      "forever": true,
+      "added": "2026-11-13"
     }
   ],
   "bundles": [
