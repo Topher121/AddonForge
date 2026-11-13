@@ -17,7 +17,7 @@ Either one updates itself when a new build is out. The Windows files are not cod
 
 ## How it finds addons
 
-The app reads your `Interface\AddOns` folder and each addon's `.toc` file. Authors put their Wago / WoWInterface / CurseForge ids in there, and the BigWigs packager most authors use publishes a `release.json` with every GitHub release, so matching what you have to where it came from is mostly reading text files.
+The app reads your `Interface\AddOns` folder and each addon's `.toc` file. Authors put their Wago / WoWInterface / CurseForge ids in there, and the BigWigs packager most authors use publishes a `release.json` with every GitHub release, so matching what you have to where it came from is mostly reading text files. Addons installed by the CurseForge app often carry no id at all, so for any folder AddonForge still can't place it works out the same folder fingerprint the CurseForge app uses (a hash of the addon's own files, computed on your PC) and asks CurseForge which project it belongs to, in one request per update check.
 
 On top of that there is a **catalogue**: [`catalog/forever.json`](catalog/forever.json). It is a pointer list, not a host. Each entry says where the author publishes releases; downloads always come straight from there. Anyone can add an addon with a pull request.
 
@@ -110,7 +110,7 @@ AddonForge does not collect or send personal data and has no telemetry, accounts
 
 Every request is HTTPS, and a site can redirect it to another host (GitHub's downloads do). At launch the app reads the catalogue, download totals and its own update manifest from this repo, then checks your installed addons for updates; there's no setting to turn that off.
 
-These requests reveal your IP address, your AddonForge version (in the User-Agent) and the addon names or IDs being checked, as with any web request. GitHub counts downloads of release files, so the update manifest's counter gives the maintainer a rough, anonymous count of launches. The CurseForge API key is sent only to api.curseforge.com.
+These requests reveal your IP address, your AddonForge version (in the User-Agent) and the addon names or IDs being checked, as with any web request. For addons it can't otherwise identify, an update check also sends CurseForge their folder fingerprints: numbers hashed from the addon files, never the files themselves. The answer is kept in memory only. GitHub counts downloads of release files, so the update manifest's counter gives the maintainer a rough, anonymous count of launches. The CurseForge API key is sent only to api.curseforge.com.
 
 **Scope of signing**
 Only AddonForge's own release builds are signed, and only from source in this repository. Addons installed through AddonForge are made by their own authors and are not signed by this project.

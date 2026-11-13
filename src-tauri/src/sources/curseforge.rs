@@ -266,6 +266,118 @@ pub async fn prefetch(client: &reqwest::Client, ids: &[u64]) -> anyhow::Result<u
     Ok(total)
 }
 
+/// An addon folder CurseForge recognised by its fingerprint: the project it
+/// belongs to and the name of the exact file that is installed.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FolderMatch {
+    pub mod_id: u64,
+    pub file_name: String,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FpModule {
+    #[serde(default)]
+    name: String,
+    #[serde(default)]
+    fingerprint: u64,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FpFile {
+    #[serde(default)]
+    mod_id: u64,
+    #[serde(default)]
+    display_name: String,
+    #[serde(default)]
+    file_name: String,
+    #[serde(default)]
+    modules: Vec<FpModule>,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FpMatch {
+    #[serde(default)]
+    id: u64,
+    #[serde(default)]
+    file: FpFile,
+}
+
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+struct FpResult {
+    #[serde(default)]
+    exact_matches: Vec<FpMatch>,
+}
+
+/// Folder name (lowercase) -> match, from the last fingerprint lookup. Memory
+/// only, never written anywhere, gone when the app closes.
+fn folder_matches() -> &'static Mutex<HashMap<String, FolderMatch>> {
+    static M: OnceLock<Mutex<HashMap<String, FolderMatch>>> = OnceLock::new();
+    M.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// What the last lookup said about this folder, if anything.
+pub fn folder_match(folder: &str) -> Option<FolderMatch> {
+    folder_matches().lock().ok()?.get(&folder.to_ascii_lowercase()).cloned()
+}
+
+/// Turn the API's answer into folder -> match. Only exact matches count, and a
+/// folder only matches when its own fingerprint is listed as one of the file's
+/// modules under its own name.
+fn matches_from(result: FpResult, asked: &[(String, u32)]) -> HashMap<String, FolderMatch> {
+    let mut out = HashMap::new();
+    for m in result.exact_matches {
+        let mod_id = if m.file.mod_id != 0 { m.file.mod_id } else { m.id };
+        if mod_id == 0 {
+            continue;
+        }
+        let file_name = match m.file.display_name.trim() {
+            "" => m.file.file_name.trim().trim_end_matches(".zip").to_string(),
+            n => n.to_string(),
+        };
+        for module in &m.file.modules {
+            for (folder, fp) in asked {
+                if module.fingerprint == *fp as u64 && module.name.eq_ignore_ascii_case(folder) {
+                    out.insert(folder.to_ascii_lowercase(), FolderMatch { mod_id, file_name: file_name.clone() });
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Ask CurseForge which projects these folders came from: ONE request for the
+/// lot. `folders` is (folder name, fingerprint). Replaces the remembered answer
+/// for every folder asked about; returns how many matched.
+pub async fn match_fingerprints(client: &reqwest::Client, folders: &[(String, u32)]) -> anyhow::Result<usize> {
+    if folders.is_empty() {
+        return Ok(0);
+    }
+    let mut fps: Vec<u32> = folders.iter().map(|(_, fp)| *fp).collect();
+    fps.sort_unstable();
+    fps.dedup();
+    let resp = request(client, reqwest::Method::POST, format!("{BASE}/fingerprints/{GAME_ID}"))?
+        .json(&serde_json::json!({ "fingerprints": fps }))
+        .send()
+        .await?;
+    if let Some(e) = api_error(resp.status().as_u16()) {
+        return Err(e);
+    }
+    let r: Data<FpResult> = resp.error_for_status()?.json().await?;
+    let found = matches_from(r.data, folders);
+    let n = found.len();
+    if let Ok(mut map) = folder_matches().lock() {
+        for (folder, _) in folders {
+            map.remove(&folder.to_ascii_lowercase());
+        }
+        map.extend(found);
+    }
+    Ok(n)
+}
+
 /// Forever addons matching `query`, most popular first. Not cached.
 pub async fn search(client: &reqwest::Client, query: &str, limit: usize) -> anyhow::Result<Vec<ModInfo>> {
     let page = Page { query: query.into(), sort: Sort::Popularity, category: None, index: 0, limit };
@@ -440,6 +552,29 @@ pub async fn resolve(client: &reqwest::Client, id: u64, prerelease: bool) -> any
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fingerprint_matches_need_the_folder_name_and_its_own_fingerprint() {
+        let json = r#"{"exactMatches":[
+            {"id":100,"file":{"modId":100,"displayName":"NodeSight-2.0.4","fileName":"NodeSight.zip",
+              "modules":[{"name":"NodeSight","fingerprint":11},{"name":"NodeSight_Data","fingerprint":12}]}},
+            {"id":200,"file":{"modId":200,"displayName":"","fileName":"Other-1.0.zip",
+              "modules":[{"name":"Other","fingerprint":99}]}}
+        ]}"#;
+        let r: FpResult = serde_json::from_str(json).unwrap();
+        let asked = vec![
+            ("NodeSight".to_string(), 11),
+            ("nodesight_data".to_string(), 12),
+            // Same fingerprint under another folder name is not a match.
+            ("Renamed".to_string(), 11),
+            ("Other".to_string(), 98),
+        ];
+        let m = matches_from(r, &asked);
+        assert_eq!(m.len(), 2);
+        assert_eq!(m["nodesight"], FolderMatch { mod_id: 100, file_name: "NodeSight-2.0.4".into() });
+        assert_eq!(m["nodesight_data"].mod_id, 100);
+        assert!(!m.contains_key("renamed") && !m.contains_key("other"));
+    }
 
     #[test]
     fn the_key_never_follows_a_redirect_off_the_api_host() {
