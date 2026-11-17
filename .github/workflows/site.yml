@@ -1,0 +1,55 @@
+name: Website
+
+# Builds https://topher121.github.io/AddonForge/ from the catalogue and the
+# latest release. Runs when the catalogue or site changes, when a release is
+# published, and daily after the download stats update (commits pushed by the
+# stats workflow do not trigger other workflows).
+on:
+  push:
+    branches: [main]
+    paths:
+      - "catalog/**"
+      - "site/**"
+      - "ui/icon.svg"
+      - "scripts/build-site.js"
+      - ".github/workflows/site.yml"
+  release:
+    types: [published]
+  schedule:
+    - cron: "47 4 * * *"   # daily, 30 minutes after the stats job
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Build the site
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/build-site.js _site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

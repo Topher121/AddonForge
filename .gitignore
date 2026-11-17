@@ -14,3 +14,6 @@ CLAUDE.md
 
 # Local browser automation snapshots (contain personal account details)
 .playwright-mcp/
+
+# Website build output (scripts/build-site.js)
+_site/

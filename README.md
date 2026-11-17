@@ -2,6 +2,8 @@
 
 A small, fast addon manager for **World of Warcraft: Forever**.
 
+Website: **[topher121.github.io/AddonForge](https://topher121.github.io/AddonForge/)**, with the full addon list and starter packs.
+
 **[Download the latest release](https://github.com/Topher121/AddonForge/releases/latest)** for Windows 10/11. Two flavours, same app:
 
 - `AddonForge-Setup-…exe`: installs to your user folder with a Start menu shortcut and an uninstaller. No admin rights needed.
