@@ -4,6 +4,20 @@
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, when the entry was listed). Top-level: bundles (starter packs). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
+      "id": "backstage-forever",
+      "name": "Backstage Forever",
+      "desc": "In-game leveling compass, quest guidance, and per-character helpers for WoW Forever.",
+      "category": "Leveling",
+      "github": "farena-ai/Backstage-Forever",
+      "asset_hint": "BackstageForever-Addon-",
+      "folders": [
+        "BackstageForever"
+      ],
+      "url": "https://github.com/farena-ai/Backstage-Forever/releases/latest",
+      "forever": true,
+      "added": "2026-11-21"
+    },
+    {
       "id": "bigwigs",
       "name": "BigWigs",
       "desc": "Boss encounter alerts and timers.",
