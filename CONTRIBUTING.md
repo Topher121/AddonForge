@@ -4,6 +4,8 @@
 
 The catalogue is [`catalog/forever.json`](catalog/forever.json). It is a pointer list, not a host: each entry says where the author publishes releases, and AddonForge downloads straight from there. We never copy zips anywhere.
 
+**WoW addons only.** The catalogue lists in-game addons: Lua, XML and textures that go in the `AddOns` folder. It does not list desktop programs, installers or companion apps, or addons that are front ends for one, even if the addon zip on its own is clean.
+
 1. Fork the repo and add one object to the `addons` array.
 2. Run `node scripts/validate-catalog.js` (it also runs on your pull request).
 3. Open the pull request. Say in a sentence where you checked that the Forever build exists.
