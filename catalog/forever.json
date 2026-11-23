@@ -1,6 +1,6 @@
 {
   "flavor": "forever",
-  "updated": "2026-11-13",
+  "updated": "2026-11-23",
   "note": "AddonForge catalogue for WoW: Forever (interface 16001). This is a pointer list, not a host: each entry says where the author publishes releases and AddonForge downloads straight from there. Add an addon by pull request. Fields: id, name, desc, category, github (owner/repo with GitHub Releases), wago (Wago Addons id, needs the user's own key), wowi (WoWInterface id), tukui (slug), curse (CurseForge id, link-out only), asset_hint (substring that picks the right zip when a release has several and no release.json), folders (top-level AddOns folders the zip installs), url, forever (true = author ships a Forever build; false = not yet). Entries with no github/wago/wowi/tukui are link-only so people know where the addon lives. Optional per-entry fields: notice (short amber line on the installed row), added (YYYY-MM-DD, when the entry was listed). Top-level: bundles (starter packs). curse_locked: true marks an author who has switched off third-party downloads on CurseForge (the curse id is then a link only).",
   "addons": [
     {
@@ -58,6 +58,7 @@
       "desc": "DBM dungeon modules for every expansion, including Forever.",
       "category": "Bosses",
       "github": "DeadlyBossMods/DBM-Dungeons",
+      "curse": 314994,
       "folders": [
         "DBM-Party-Forever",
         "DBM-Party-Vanilla",
@@ -87,6 +88,7 @@
       "desc": "DBM raid modules for the classic-era raids.",
       "category": "Bosses",
       "github": "DeadlyBossMods/DBM-Vanilla",
+      "curse": 16442,
       "asset_hint": "DBM-Vanilla",
       "folders": [
         "DBM-Raids-Vanilla",
@@ -760,6 +762,7 @@
       "desc": "Collects minimap buttons into one.",
       "category": "Minimap",
       "github": "syndenbock/MinimapButtonButton",
+      "curse": 446096,
       "folders": [
         "MinimapButtonButton"
       ],
