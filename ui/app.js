@@ -382,7 +382,7 @@ $("installed-list").addEventListener("click", async (e) => {
     try {
       await invoke("remove_package", { key, recycle: true });
       toast(p.managed ? `Removed ${p.name}` : `Moved ${p.name} to the ${bin}`);
-      await rescan();
+      await rescan(true);
     } catch (err) {
       toast(String(err), true);
     } finally {
@@ -433,26 +433,14 @@ async function updateOne(p, allowNonForever = false, { bulk = false } = {}) {
   }
 }
 
-/// keepStatus: re-scan but keep remote versions and failed updates we already know.
-async function rescan(keepStatus = false) {
+/// keepStatus: re-scan but keep what the last check found for addons that did
+/// not change on disk. resolved: packages an install just returned already
+/// checked, which replace their scanned copy.
+async function rescan(keepStatus = false, resolved = []) {
   setBusy(true);
   try {
     const fresh = await invoke("scan");
-    if (keepStatus) {
-      for (const f of fresh) {
-        const old = packages.find((x) => x.key === f.key);
-        if (old && (old.remote_version || old.updateFailed)) {
-          f.remote_version = old.remote_version;
-          f.remote_forever = old.remote_forever;
-          f.remote_prerelease = old.remote_prerelease;
-          f.update_available = old.update_available;
-          f.status = old.status;
-          f.note = old.note;
-          f.updateFailed = old.updateFailed;
-        }
-      }
-    }
-    packages = fresh;
+    packages = keepStatus ? mergeStatus(fresh, packages, resolved) : fresh;
     renderInstalled();
     loadIcons("p", packages.map((p) => p.key));
     if (!packages.length) $("guide").open = true; // nothing installed yet: probably new to this
@@ -463,6 +451,27 @@ async function rescan(keepStatus = false) {
   } finally {
     setBusy(false);
   }
+}
+
+function mergeStatus(fresh, old, resolved = []) {
+  return fresh.map((f) => {
+    const r = resolved.find((x) => x && x.key === f.key);
+    if (r) return r;
+    const o = old.find((x) => x.key === f.key);
+    // A changed version means it was installed or replaced since the check:
+    // say "Not checked" rather than repeat an answer about the old files.
+    if (!o || !(o.remote_version || o.updateFailed) || o.installed_version !== f.installed_version) return f;
+    return {
+      ...f,
+      remote_version: o.remote_version,
+      remote_forever: o.remote_forever,
+      remote_prerelease: o.remote_prerelease,
+      update_available: o.update_available,
+      status: o.status,
+      note: o.note,
+      updateFailed: o.updateFailed,
+    };
+  });
 }
 
 async function checkUpdates() {
@@ -966,15 +975,16 @@ async function onCurseInstallClick(e) {
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     row.installed = true;
     renderCurseRows();
-    await rescan(true);
+    await rescan(true, [p]);
     renderCatalog();
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
       setBusy(false);
       const ok = await confirmModal(`<p><b>${esc(row.name)}</b>'s latest release does not list a Forever build.</p><p class="muted">Install it anyway?</p>`, "Install anyway");
-      if (ok) { try { await invoke("install_curse", { id, allowNonForever: true }); row.installed = true; } catch (e2) { toast(explainError(e2), true); } }
+      let p = null;
+      if (ok) { try { p = await invoke("install_curse", { id, allowNonForever: true }); row.installed = true; } catch (e2) { toast(explainError(e2), true); } }
       renderCurseRows();
-      await rescan(true);
+      await rescan(true, [p]);
       return;
     }
     toast(explainError(err), true);
@@ -1036,10 +1046,11 @@ $("bundle-list").addEventListener("click", async (e) => {
   setBusy(true);
   let done = 0;
   const skipped = [];
+  const got = [];
   for (const a of todo) {
     btn.innerHTML = `<span class="spinner"></span> ${done + skipped.length + 1} / ${todo.length}: ${esc(a.name)}`;
     try {
-      await invoke("install_catalog", { id: a.id, allowNonForever: false });
+      got.push(await invoke("install_catalog", { id: a.id, allowNonForever: false }));
       a.installed = true;
       const row = catalog.find((c) => c.id === a.id);
       if (row) row.installed = true;
@@ -1052,7 +1063,7 @@ $("bundle-list").addEventListener("click", async (e) => {
   toast(skipped.length ? `Installed ${done} of ${todo.length}. Skipped ${skipped.join("; ")}` : `Installed ${done} addon${done === 1 ? "" : "s"} from ${b.name}`, skipped.length > 0);
   renderBundles();
   renderCatalog();
-  await rescan(true);
+  await rescan(true, got);
 });
 $("btn-catalog-refresh").onclick = () => loadCatalog(true);
 $("browse-list").addEventListener("click", async (e) => {
@@ -1075,7 +1086,7 @@ async function installCatalog(entry, allowNonForever, source = null) {
     for (const b of bundles) for (const a of b.addons) if (a.id === entry.id) a.installed = true;
     renderBundles();
     renderCatalog();
-    await rescan(true);
+    await rescan(true, [p]);
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
       setBusy(false);
@@ -1105,7 +1116,7 @@ async function installGithub(allowNonForever = false) {
     const p = await invoke("install_github", { repo, allowNonForever });
     toast(svfixReminder(`Installed ${p.name} ${p.installed_version || ""}`));
     $("browse-filter").value = "";
-    await rescan(true);
+    await rescan(true, [p]);
     loadCatalog(false);
   } catch (err) {
     if (String(err) === "NOT_FOREVER") {
@@ -1280,10 +1291,11 @@ function renderImportPlan(plan) {
     go.onclick = async () => {
       setBusy(true);
       let done = 0;
+      const got = [];
       for (const r of todo) {
         go.innerHTML = `<span class="spinner"></span> ${done + 1} / ${todo.length}: ${esc(r.name)}`;
         try {
-          await invoke("install_source", { source: r.source, key: r.key, allowNonForever: true });
+          got.push(await invoke("install_source", { source: r.source, key: r.key, allowNonForever: true }));
           done++;
         } catch (err) {
           toast(`${r.name}: ${explainError(err)}`, true);
@@ -1292,7 +1304,7 @@ function renderImportPlan(plan) {
       setBusy(false);
       toast(`Imported ${done} of ${todo.length}`);
       box.classList.add("hidden");
-      await rescan();
+      await rescan(true, got);
       document.querySelector('.tab[data-tab="installed"]').click();
     };
 }
@@ -1379,26 +1391,59 @@ $("selfupdate-go").onclick = async () => {
   }
 };
 
-// A local ZIP still requires confirmation, including when dropped onto the window.
-async function importZip(path) {
-  if (busy) return;
+// Local ZIPs still require confirmation, including when dropped onto the window.
+// Several can be chosen at once: every one is previewed first, one question
+// covers them all, then they install in turn.
+async function importZips(paths) {
+  if (busy || !paths.length) return;
   setBusy(true);
   try {
-    const preview = await invoke("preview_zip", { path });
-    const rows = preview.plan.folders.map(([name, exists]) => `<li><b>${esc(name)}</b> ? ${exists ? "Replace installed folder" : "Install new folder"}</li>`).join("");
-    const ok = await confirmModal(`<p>Install this downloaded ZIP into your selected WoW installation?</p><ul>${rows}</ul><p class="muted">Close WoW first. Check this download is for Forever. Saved settings in WTF and your downloaded ZIP are kept.</p>`, "Install ZIP");
+    const previews = [];
+    for (const path of paths) previews.push({ path, ...(await invoke("preview_zip", { path })) });
+    const clash = zipClash(previews);
+    if (clash) return toast(`${clash.a} and ${clash.b} both contain ${clash.folder}. Install them one at a time.`, true);
+    const many = previews.length > 1;
+    const list = previews
+      .map(({ path, plan }) => {
+        const rows = plan.folders.map(([name, exists]) => `<li><b>${esc(name)}</b>: ${exists ? "replace installed folder" : "install new folder"}</li>`).join("");
+        return (many ? `<p class="muted">${esc(fileName(path))}</p>` : "") + `<ul>${rows}</ul>`;
+      })
+      .join("");
+    const ok = await confirmModal(`<p>Install ${many ? `these ${previews.length} downloaded ZIPs` : "this downloaded ZIP"} into your selected WoW installation?</p>${list}<p class="muted">Close WoW first. Check ${many ? "these downloads are" : "this download is"} for Forever. Saved settings in WTF and your downloaded ${many ? "ZIPs are" : "ZIP is"} kept.</p>`, many ? `Install ${previews.length} ZIPs` : "Install ZIP");
     if (!ok) return;
-    await invoke("install_zip", { path, install: preview.install, plan: preview.plan });
-    await rescan();
-    toast(svfixReminder("ZIP installed"));
+    const failed = [];
+    for (const { path, install, plan } of previews) {
+      try { await invoke("install_zip", { path, install, plan }); }
+      catch (e) { failed.push(`${fileName(path)}: ${e}`); }
+    }
+    await rescan(true);
+    const done = previews.length - failed.length;
+    if (failed.length) toast(`Installed ${done} of ${previews.length}. ${failed.join("; ")}`, true);
+    else toast(svfixReminder(many ? `${done} ZIPs installed` : "ZIP installed"));
   } catch (e) { toast(String(e), true); }
   finally { setBusy(false); }
+}
+function fileName(path) {
+  return String(path).split(/[\\/]/).pop();
+}
+/// Two ZIPs carrying the same folder would overwrite each other.
+function zipClash(previews) {
+  const seen = new Map();
+  for (const { path, plan } of previews) {
+    for (const [name] of plan.folders) {
+      const k = name.toLowerCase();
+      if (seen.has(k) && seen.get(k) !== path) return { folder: name, a: fileName(seen.get(k)), b: fileName(path) };
+      seen.set(k, path);
+    }
+  }
+  return null;
 }
 $("btn-zip").onclick = async () => {
   if (busy) return;
   try {
-    const path = await T.dialog.open({ title: "Install downloaded ZIP", multiple: false, filters: [{ name: "Addon ZIP", extensions: ["zip"] }] });
-    if (path) await importZip(path);
+    const picked = await T.dialog.open({ title: "Install downloaded ZIPs", multiple: true, filters: [{ name: "Addon ZIP", extensions: ["zip"] }] });
+    const paths = picked == null ? [] : [].concat(picked);
+    if (paths.length) await importZips(paths);
   } catch (e) { toast(String(e), true); }
 };
 
@@ -1441,10 +1486,10 @@ $("btn-zip").onclick = async () => {
 if (T.webviewWindow?.getCurrentWebviewWindow) {
   T.webviewWindow.getCurrentWebviewWindow().onDragDropEvent(({ payload }) => {
     if (payload.type !== "drop" || busy) return;
-    if (payload.paths.length !== 1 || !/\.zip$/i.test(payload.paths[0])) {
-      toast("Drop one downloaded addon ZIP at a time", true);
+    if (!payload.paths.length || !payload.paths.every((x) => /\.zip$/i.test(x))) {
+      toast("Drop downloaded addon ZIP files only", true);
       return;
     }
-    importZip(payload.paths[0]);
+    importZips(payload.paths);
   }).catch((e) => toast(String(e), true));
 }

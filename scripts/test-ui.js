@@ -469,15 +469,15 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
     ? { install: 'QA/game', plan: { digest: 'abc', folders: [['Example<unsafe>', true], ['Options', false]] } }
     : []);
   run('setBusy(false)');
-  const cancelledZip = run(`importZip('QA/download.zip')`);
+  const cancelledZip = run(`importZips(['QA/download.zip'])`);
   await new Promise(resolve => setTimeout(resolve, 0));
   assert.match(element('modal-text').innerHTML, /Example&lt;unsafe&gt;/);
-  assert.match(element('modal-text').innerHTML, /Replace installed folder/);
-  assert.match(element('modal-text').innerHTML, /Install new folder/);
+  assert.match(element('modal-text').innerHTML, /replace installed folder/i);
+  assert.match(element('modal-text').innerHTML, /install new folder/i);
   element('modal-no').onclick();
   await cancelledZip;
   assert.equal(invokeCalls.filter(c => c.command === 'install_zip').length, 0);
-  const installedZip = run(`importZip('QA/download.zip')`);
+  const installedZip = run(`importZips(['QA/download.zip'])`);
   await new Promise(resolve => setTimeout(resolve, 0));
   element('modal-yes').onclick();
   await installedZip;
@@ -486,16 +486,51 @@ assert.ok(parseFloat(menu.style.right) >= 12, 'Options stay inside the right edg
   assert.equal(zipCall.args.plan.digest, 'abc');
   assert.equal(run('busy'), false);
   invokeReply = () => Promise.reject(new Error('Unsafe ZIP'));
-  await run(`importZip('QA/unsafe.zip')`);
+  await run(`importZips(['QA/unsafe.zip'])`);
   assert.match(element('toast').textContent, /Unsafe ZIP/);
   assert.equal(run('busy'), false);
+
+  // Several ZIPs: one question naming each file, then each installs in turn.
+  invokeCalls.length = 0;
+  invokeReply = (command, args) => Promise.resolve(command === 'preview_zip'
+    ? { install: 'QA/game', plan: { digest: args.path, folders: [[args.path.includes('one') ? 'One' : 'Two', false]] } }
+    : []);
+  const twoZips = run(`importZips(['QA/one.zip', 'QA\\\\two.zip'])`);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  assert.match(element('modal-text').innerHTML, /these 2 downloaded ZIPs/);
+  assert.match(element('modal-text').innerHTML, /one\.zip[\s\S]*two\.zip/);
+  assert.equal(element('modal-yes').textContent, 'Install 2 ZIPs');
+  element('modal-yes').onclick();
+  await twoZips;
+  assert.deepEqual(invokeCalls.filter(c => c.command === 'install_zip').map(c => c.args.plan.digest), ['QA/one.zip', 'QA\\two.zip']);
+  assert.match(element('toast').textContent, /2 ZIPs installed/);
+  // Two ZIPs carrying the same folder are refused before anything is asked or installed.
+  invokeCalls.length = 0;
+  invokeReply = (command) => Promise.resolve(command === 'preview_zip'
+    ? { install: 'QA/game', plan: { digest: 'x', folders: [['Shared', false]] } }
+    : []);
+  await run(`importZips(['QA/a.zip', 'QA/b.zip'])`);
+  assert.match(element('toast').textContent, /a\.zip and b\.zip both contain Shared/);
+  assert.equal(invokeCalls.filter(c => c.command === 'install_zip').length, 0);
+  assert.equal(run('busy'), false);
+
+  // A rescan after an install keeps the last check for unchanged addons, says
+  // "Not checked" for a changed one and takes an install's own resolved answer.
+  const merged = JSON.parse(run(`JSON.stringify(mergeStatus(
+    [{key:'a',installed_version:'1',status:'unknown'},{key:'b',installed_version:'3',status:'unknown'},{key:'c',installed_version:'5',status:'unknown'}],
+    [{key:'a',installed_version:'1',remote_version:'2',status:'update',update_available:true},{key:'b',installed_version:'2',remote_version:'3',status:'update'}],
+    [{key:'c',installed_version:'5',remote_version:'5',status:'ok'}]))`));
+  assert.equal(merged[0].status, 'update');
+  assert.equal(merged[0].remote_version, '2');
+  assert.equal(merged[1].status, 'unknown');
+  assert.equal(merged[2].status, 'ok');
 
   // Exercise the native drag callback with the same window API the app uses.
   run(`T.webviewWindow = { getCurrentWebviewWindow: () => ({ onDragDropEvent: (fn) => { window.zipDrop = fn; return Promise.resolve(() => {}); } }) };`);
   vm.runInContext(fs.readFileSync('ui/app.js', 'utf8').split('// Native Tauri drag events provide paths without exposing filesystem access to JS.')[1], context);
   invokeCalls.length = 0;
-  run(`window.zipDrop({payload:{type:'drop',paths:['a.zip','b.zip']}})`);
-  assert.match(element('toast').textContent, /one downloaded addon ZIP/);
+  run(`window.zipDrop({payload:{type:'drop',paths:['a.zip','notes.txt']}})`);
+  assert.match(element('toast').textContent, /ZIP files only/);
   assert.equal(invokeCalls.length, 0);
   run(`setBusy(true); window.zipDrop({payload:{type:'drop',paths:['a.zip']}}); setBusy(false);`);
   assert.equal(invokeCalls.length, 0);
