@@ -175,6 +175,33 @@ run('curse.loaded = curse.total; renderCurseRows()');
 assert.equal(element('curse-status').textContent, 'Category order applies to shown results');
 run(`settings = null; curse.rows = []; curse.total = 0; curse.loaded = 0;`);
 element('browse-sort').value = 'name';
+// "Most downloaded" is one ranking: catalogue rows (bigger of GitHub and
+// CurseForge counts) interleave with CurseForge rows, and a catalogue row that
+// would rank past the last CurseForge row loaded waits for the next page.
+run(`settings = { has_curse: true };
+catalog = [
+  { id:'gh', name:'GhBig', github:'a/b', downloads:2000000, stat_source:'github' },
+  { id:'cfcat', name:'CfCat', curse:5, desc:'' },
+  { id:'small', name:'Small', github:'c/d', downloads:100, stat_source:'github' },
+];
+curseCounts = { cfcat: 900000, gh: 10 };
+const row = (id, name, downloads) => ({ id, name, downloads, summary:'', url:'u', category:'', installable:true, installed:false, isCurseRow:true });
+curse.rows = [row(1, 'CfHuge', 5000000), row(2, 'CfMid', 500000)]; curse.total = 100; curse.loaded = 50; curse.loading = false;
+document.getElementById('browse-filter').value = ''; document.getElementById('browse-cat').value = '';`);
+element('browse-sort').value = 'downloads';
+run('renderCurseRows()');
+const ranked = (html) => ['CfHuge', 'GhBig', 'CfCat', 'CfMid', 'Small'].filter((n) => html.includes(`>${n}<`));
+assert.deepEqual(ranked(element('browse-list').innerHTML), ['CfHuge', 'GhBig', 'CfCat', 'CfMid'], 'one ranking, Small waits for more pages');
+assert.equal(element('curse-list').innerHTML, '', 'CurseForge rows are drawn in the main list');
+assert.match(element('browse-list').innerHTML, /900,000 downloads, all time, counted on CurseForge/);
+assert.match(element('browse-list').innerHTML, /2,000,000 downloads, all time, counted on GitHub/, 'the bigger count wins');
+run('curse.loaded = curse.total; renderCurseRows()');
+assert.deepEqual(ranked(element('browse-list').innerHTML), ['CfHuge', 'GhBig', 'CfCat', 'CfMid', 'Small'], 'everything once all pages are in');
+element('browse-sort').value = 'name';
+run('renderCurseRows(); renderBrowseList()');
+assert.match(element('curse-list').innerHTML, /CfHuge/, 'other sorts keep the two lists');
+assert.doesNotMatch(element('browse-list').innerHTML, /CfHuge/);
+run(`settings = null; curse.rows = []; curse.total = 0; curse.loaded = 0; curseCounts = {}; catalog = [];`);
 // Source picker: one source is a link, several become a select; Wago ids and locked CurseForge ids never count.
 run(`settings = { has_curse: true };
 catalog = [

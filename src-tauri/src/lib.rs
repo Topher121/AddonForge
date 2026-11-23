@@ -1239,6 +1239,32 @@ fn installed_catalog_ids(packages: Vec<Package>) -> Vec<String> {
     packages.into_iter().filter_map(|p| p.catalog_id).collect()
 }
 
+/// CurseForge's all-time download counts for catalogue entries that have a
+/// CurseForge id, so "Most downloaded" ranks them alongside CurseForge's own
+/// rows. One batched request (cached in memory for a few minutes, like every
+/// CurseForge answer); nothing is written to disk.
+#[tauri::command]
+async fn catalog_curse_downloads(app: State<'_, Shared>) -> Result<HashMap<String, u64>, String> {
+    if !sources::curseforge::available() {
+        return Ok(HashMap::new());
+    }
+    let cat = catalog_cached(&app).await;
+    let mut ids: Vec<u64> = cat.addons.iter().filter_map(|e| e.curse).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    if let Err(e) = sources::curseforge::prefetch(&app.client, &ids).await {
+        loge!("curseforge catalogue counts: {e}");
+    }
+    Ok(cat
+        .addons
+        .iter()
+        .filter_map(|e| {
+            let m = sources::curseforge::cached_info(e.curse?)?;
+            Some((e.id.clone(), m.download_count))
+        })
+        .collect())
+}
+
 #[tauri::command]
 async fn catalog_list(app: State<'_, Shared>, refresh: Option<bool>) -> Result<Vec<CatalogRow>, String> {
     if refresh.unwrap_or(false) {
@@ -2235,6 +2261,7 @@ pub fn run() {
             check_updates,
             update_package,
             catalog_list,
+            catalog_curse_downloads,
             bundles,
             curse_search,
             install_curse,

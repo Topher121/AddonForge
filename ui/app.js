@@ -571,6 +571,32 @@ function browseSort() {
   return { by, descending: order ? order === "desc" : by === "downloads" || by === "updated" };
 }
 
+// CurseForge's all-time counts for catalogue entries (memory only, loaded once a
+// session). A row shows the bigger of that and its GitHub/WoWInterface count.
+let curseCounts = {};
+function downloadsOf(x) {
+  if (x.isCurseRow) return x.downloads ?? null;
+  const c = curseCounts[x.id], g = x.downloads;
+  if (c == null) return g ?? null;
+  return g == null ? c : Math.max(c, g);
+}
+function downloadSource(e) {
+  const c = curseCounts[e.id];
+  if (c != null && (e.downloads == null || c >= e.downloads)) return "CurseForge (all game versions)";
+  return e.stat_source === "wowi" ? "WoWInterface" : "GitHub";
+}
+async function loadCurseCounts() {
+  if (!settings?.has_curse) return;
+  try {
+    curseCounts = (await invoke("catalog_curse_downloads")) || {};
+    renderBrowseList();
+  } catch (_) {}
+}
+// "Most downloaded" ranks catalogue and CurseForge rows as one list.
+function mergedRanking() {
+  return !!settings?.has_curse && browseSort().by === "downloads";
+}
+
 function sortedCatalog(rows) {
   const { by, descending } = browseSort();
   const direction = descending ? -1 : 1;
@@ -579,12 +605,12 @@ function sortedCatalog(rows) {
     if (by === "name") return direction * byAddonName(a, b);
     let compared;
     if (by === "downloads" || by === "updated") {
-      const field = by === "downloads" ? "downloads" : "updated_at";
-      const missingA = a[field] == null || a[field] === "";
-      const missingB = b[field] == null || b[field] === "";
+      const value = (x) => by === "downloads" ? downloadsOf(x) : x.updated_at;
+      const missingA = value(a) == null || value(a) === "";
+      const missingB = value(b) == null || value(b) === "";
       // Unknown counts/dates stay last in either direction; zero is a known count.
       if (missingA !== missingB) return missingA ? 1 : -1;
-      compared = by === "downloads" ? (a.downloads || 0) - (b.downloads || 0)
+      compared = by === "downloads" ? (downloadsOf(a) || 0) - (downloadsOf(b) || 0)
         : String(a.updated_at || "").localeCompare(String(b.updated_at || ""));
     } else {
       const value = (e) => by === "source" ? source(e) : String(e.category || "");
@@ -638,14 +664,7 @@ function githubRepoFrom(text) {
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
-function renderCatalog() {
-  renderSortHeadings();
-  const q = $("browse-filter").value.trim().toLowerCase();
-  const type = typeFor($("browse-cat").value);
-  const rows = sortedCatalog(catalog.filter((e) => catalogMatchesType(e, type) && (!q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q))));
-  $("browse-list").innerHTML = rows.length
-    ? rows
-        .map((e) => {
+function catalogRowHtml(e) {
           const srcs = installSources(e);
           const fv = e.forever === true ? `<span class="badge forever">Forever</span>` : e.forever === false ? `<span class="badge not-forever">No Forever build</span>` : "";
           const srcCell = srcs.length > 1
@@ -656,21 +675,46 @@ function renderCatalog() {
           return `<div class="item" data-id="${esc(e.id)}">
             <div class="c-name clickable" data-detail="${esc(e.id)}" title="Details">${iconTile("c", e.id, e.name)}<div class="nm-wrap"><span class="nm">${esc(e.name)}</span><span class="flags">${fv}${e.installed ? ' <span class="badge ok">installed</span>' : ""}</span><div class="sub-line" title="${esc(e.desc || "")}">${esc(e.desc || "")}</div></div></div>
             <div class="c-cat muted">${esc(e.category || "")}</div>
-            <div class="c-dl" title="${e.downloads != null ? esc(e.downloads.toLocaleString() + " downloads, all time, counted on " + (e.stat_source === "wowi" ? "WoWInterface" : "GitHub")) : "No download count for this source"}">${e.downloads != null ? `<b>${fmtCount(e.downloads)}</b>` : `<span class="muted">\u2014</span>`}${e.updated_at ? `<div class="sub-line">${ago(e.updated_at)}</div>` : ""}</div>
+            <div class="c-dl" title="${downloadsOf(e) != null ? esc(downloadsOf(e).toLocaleString() + " downloads, all time, counted on " + downloadSource(e)) : "No download count for this source"}">${downloadsOf(e) != null ? `<b>${fmtCount(downloadsOf(e))}</b>` : `<span class="muted">\u2014</span>`}${e.updated_at ? `<div class="sub-line">${ago(e.updated_at)}</div>` : ""}</div>
             <div class="c-src">${srcCell}</div>
             <div class="c-act">
               ${srcs.length ? `<button class="btn small" data-act="install">${e.installed ? "Reinstall" : "Install"}</button>` : `<span class="badge curse-only">link only</span>`}
             </div>
           </div>`;
-        })
-        .join("")
-    : `<div class="empty${q ? " slim" : ""}">${q ? "Nothing in the catalogue matches." : "Nothing here."}</div>`;
+}
+
+function renderBrowseList() {
+  renderSortHeadings();
+  const q = $("browse-filter").value.trim().toLowerCase();
+  const type = typeFor($("browse-cat").value);
+  const rows = sortedCatalog(catalog.filter((e) => catalogMatchesType(e, type) && (!q || `${e.name} ${e.desc} ${e.category} ${e.github || ""}`.toLowerCase().includes(q))));
+  let html;
+  if (mergedRanking() && curse.rows.length) {
+    // CurseForge pages arrive in download order. A catalogue row that would
+    // rank past the last CurseForge row loaded waits for the next page, so the
+    // order is right at every point.
+    const remote = sortedCatalog([...curse.rows]);
+    const { descending } = browseSort();
+    const edge = curse.loaded < curse.total ? downloadsOf(remote[remote.length - 1]) : null;
+    const shown = edge == null ? rows : rows.filter((e) => {
+      const n = downloadsOf(e);
+      return n != null && (descending ? n >= edge : n <= edge);
+    });
+    html = sortedCatalog([...shown, ...remote]).map((x) => (x.isCurseRow ? curseRowHtml(x) : catalogRowHtml(x))).join("");
+  } else {
+    html = rows.map(catalogRowHtml).join("");
+  }
+  $("browse-list").innerHTML = html || `<div class="empty${q ? " slim" : ""}">${q ? "Nothing in the catalogue matches." : "Nothing here."}</div>`;
   $("browse-summary").textContent = q || type ? `${rows.length} of ${catalog.length}` : `${catalog.length} in the catalogue${curse.total ? ` \u00b7 ${curse.total.toLocaleString()} more on CurseForge` : ""}`;
   const repo = q ? githubRepoFrom($("browse-filter").value) : null;
   $("gh-offer").classList.toggle("hidden", !repo);
   if (repo) $("gh-offer-repo").textContent = repo;
-  scheduleCurseSearch($("browse-filter").value.trim());
   setBusy(busy);
+}
+
+function renderCatalog() {
+  renderBrowseList();
+  scheduleCurseSearch($("browse-filter").value.trim());
 }
 
 async function loadCatalog(refresh) {
@@ -678,6 +722,7 @@ async function loadCatalog(refresh) {
   try {
     catalog = await invoke("catalog_list", { refresh });
     renderCatalog();
+    loadCurseCounts();
     loadIcons("c", catalog.map((e) => e.id));
     loadBundles();
   } catch (err) {
@@ -720,7 +765,7 @@ async function openDetail(id, installedPackage = null) {
   const bits = [e.category, installedPackage?.source_label || (entry ? sourceLabel(e) : "No update source")];
   if (installedPackage?.installed_version) bits.push(`Installed ${installedPackage.installed_version}`);
   if (installedPackage?.remote_version) bits.push(`Available ${installedPackage.remote_version}${installedPackage.remote_prerelease ? " (beta)" : ""}`);
-  if (e.downloads != null) bits.push(`${fmtCount(e.downloads)} downloads`);
+  if (downloadsOf(e) != null) bits.push(`${fmtCount(downloadsOf(e))} downloads`);
   if (e.updated_at) bits.push(ago(e.updated_at));
   $("detail-meta").innerHTML = bits.filter(Boolean).map(esc).join(" \u00b7 ") +
     (e.forever === true ? ' \u00b7 <span class="badge forever">Forever</span>' : e.forever === false ? ' \u00b7 <span class="badge not-forever">No Forever build</span>' : "") +
@@ -812,25 +857,27 @@ function curseParams() {
   return { query: q, sort, category: type ? type.curse : null, key: `${q}|${$("browse-sort").value || "name"}|${type ? type.id : ""}` };
 }
 
+function curseRowHtml(r) {
+  const act = r.installed ? '<span class="badge ok">installed</span>'
+    : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
+    : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app; the link opens its page">link only</span>`;
+  return `<div class="item" data-id="${r.id}">
+        <div class="c-name">${iconTile("cf", String(r.id), r.name)}<div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a><div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
+        <div class="c-cat muted">${esc(r.category || "")}</div>
+        <div class="c-dl" title="${esc((r.downloads || 0).toLocaleString() + " downloads, all time, counted on CurseForge (all game versions)")}"><b>${fmtCount(r.downloads)}</b></div>
+        <div class="c-src"><a href="#" data-url="${esc(r.url)}">CurseForge</a></div>
+        <div class="c-act">${act}</div>
+      </div>`;
+}
+
 function renderCurseRows() {
   const box = $("curse-results");
   if (!settings?.has_curse) return box.classList.add("hidden");
   // Updated dates are not present on these rows; keep the API's date order.
   const rows = browseSort().by === "updated" ? curse.rows : sortedCatalog([...curse.rows]);
-  $("curse-list").innerHTML = rows
-    .map((r) => {
-      const act = r.installed ? '<span class="badge ok">installed</span>'
-        : r.installable ? `<button class="btn small" data-act="curse-install">Install</button>`
-        : `<span class="badge curse-only" title="The author only distributes this through CurseForge's own app; the link opens its page">link only</span>`;
-      return `<div class="item" data-id="${r.id}">
-        <div class="c-name">${iconTile("cf", String(r.id), r.name)}<div class="nm-wrap"><a class="nm" href="#" data-url="${esc(r.url)}">${esc(r.name)}</a><div class="sub-line" title="${esc(r.summary)}">${esc(r.summary)}</div></div></div>
-        <div class="c-cat muted">${esc(r.category || "")}</div>
-        <div class="c-dl"><b>${fmtCount(r.downloads)}</b></div>
-        <div class="c-src"><a href="#" data-url="${esc(r.url)}">CurseForge</a></div>
-        <div class="c-act">${act}</div>
-      </div>`;
-    })
-    .join("");
+  const merged = mergedRanking();
+  $("curse-list").innerHTML = merged ? "" : rows.map(curseRowHtml).join("");
+  if (merged) renderBrowseList();
   const more = curse.loaded < curse.total;
   $("btn-curse-more").classList.toggle("hidden", !more || curse.loading);
   $("curse-status").textContent = curse.loading
@@ -869,7 +916,8 @@ async function loadCurse(more = false) {
     curse.loaded += r.rows.length;
     curse.total = r.total || 0;
     const have = new Set(curse.rows.map((x) => x.id));
-    curse.rows.push(...r.rows.filter((x) => !x.catalog_id && !have.has(x.id)));
+    for (const x of r.rows) if (x.catalog_id && x.downloads != null) curseCounts[x.catalog_id] = x.downloads;
+    curse.rows.push(...r.rows.filter((x) => !x.catalog_id && !have.has(x.id)).map((x) => ({ ...x, isCurseRow: true })));
     if (!r.rows.length) curse.total = curse.loaded; // CurseForge ran out early
   } catch (err) {
     if (seq !== curse.seq) return;
@@ -905,7 +953,7 @@ $("browse-filter").addEventListener("keydown", (e) => {
   clearTimeout(curse.timer);
   loadCurse(false);
 });
-$("curse-list").addEventListener("click", async (e) => {
+async function onCurseInstallClick(e) {
   const btn = e.target.closest("button[data-act=curse-install]");
   if (!btn || busy) return;
   const id = Number(btn.closest(".item").dataset.id);
@@ -934,7 +982,9 @@ $("curse-list").addEventListener("click", async (e) => {
   } finally {
     setBusy(false);
   }
-});
+}
+$("curse-list").addEventListener("click", onCurseInstallClick);
+$("browse-list").addEventListener("click", onCurseInstallClick);
 
 // ---------------------------------------------------------------- starter packs
 async function loadBundles() {
