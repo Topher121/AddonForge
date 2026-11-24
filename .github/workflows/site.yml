@@ -1,9 +1,11 @@
 name: Website
 
 # Builds https://topher121.github.io/AddonForge/ from the catalogue and the
-# latest release. Runs when the catalogue or site changes, when a release is
-# published, and daily after the download stats update (commits pushed by the
-# stats workflow do not trigger other workflows).
+# latest release. Runs when the catalogue or site changes, daily after the
+# download stats update (commits pushed by the stats workflow do not trigger
+# other workflows), and when build.ps1 -Release dispatches it on main. No
+# `release` trigger: that runs from the tag, which the github-pages
+# environment refuses to deploy.
 on:
   push:
     branches: [main]
@@ -13,8 +15,6 @@ on:
       - "ui/icon.svg"
       - "scripts/build-site.js"
       - ".github/workflows/site.yml"
-  release:
-    types: [published]
   schedule:
     - cron: "47 4 * * *"   # daily, 30 minutes after the stats job
   workflow_dispatch:

@@ -205,5 +205,8 @@ if ($Release) {
         gh release create $tag @assets --title "AddonForge $tag" --notes "$whatsNew"
         if ($LASTEXITCODE -ne 0) { throw "gh release create failed" }
         Write-Host "published GitHub release $tag" -ForegroundColor Green
+        # Refresh the website from main (a tag-triggered run cannot deploy to Pages).
+        gh workflow run site.yml --ref main
+        if ($LASTEXITCODE -ne 0) { Write-Host "could not start the Website workflow; run it from the Actions tab" -ForegroundColor Yellow }
     } finally { Pop-Location }
 }
