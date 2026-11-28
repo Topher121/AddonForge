@@ -11,7 +11,9 @@ Website: **[topher121.github.io/AddonForge](https://topher121.github.io/AddonFor
 
 Either one updates itself when a new build is out. The Windows files are not code-signed yet, so SmartScreen may show an unknown-publisher warning. A Defender malware detection is a separate issue: if Defender blocks a file, report the build number and detection name; do not disable antivirus or add an exclusion. If AddonForge disappears after an update, the previous version is kept for one more launch (installed copy: `addonforge.exe.old` in `%LOCALAPPDATA%\AddonForge`; portable: the old file next to it), or reinstall from the releases page. Your addons and settings are not affected.
 
-![AddonForge showing installed addons with update status](docs/screenshot.png)
+![AddonForge: Find addons, the catalogue and CurseForge in one list](docs/screenshot.png)
+
+![AddonForge: Starter packs for people new to addons](docs/screenshot-packs.png)
 
 - **Light.** A single exe on top of the WebView2 that Windows already has. No bundled browser.
 - **Private.** No account, no ads, no analytics, no server of ours in the loop. The app talks only to the sites addons are published on (GitHub, Wago, WoWInterface, TukUI, CurseForge), plus this project's GitHub repo for the catalogue and updates. The full list is under [Privacy](#code-signing-policy).
